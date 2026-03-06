@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Markdown Converter</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+</head>
+<body>
+    <header>
+        <h1>PDF to Markdown</h1>
+        <div class="controls">
+            <input type="file" id="fileInput" accept=".pdf">
+            <button id="uploadBtn" onclick="uploadFile()">Upload & Convert</button>
+            <input type="text" id="searchInput" placeholder="Search...">
+            <button onclick="performSearch()">Search</button>
+            <button onclick="clearSearch()" id="clearSearchBtn" style="display:none;">Clear</button>
+        </div>
+    </header>
+    
+    <div class="main-container">
+        <div class="pdf-container" id="pdfContainer">
+            <div class="pdf-controls">
+                <button onclick="changeZoom(0.2)">Zoom In</button>
+                <button onclick="changeZoom(-0.2)">Zoom Out</button>
+                <span id="pageInfo">Page 1</span>
+                <input type="number" id="pageJump" min="1" style="width: 50px">
+                <button onclick="jumpToPage()">Go</button>
+            </div>
+            <div id="pdfViewer" class="pdf-viewer"></div>
+        </div>
+        
+        <div class="markdown-container" id="markdownContainer">
+            <div id="markdownContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

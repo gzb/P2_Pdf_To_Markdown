@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-multipart
+pymupdf
+jinja2
+requests
+aiofiles
