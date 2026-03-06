@@ -5,3 +5,4 @@ pymupdf
 jinja2
 requests
 aiofiles
+pdfplumber

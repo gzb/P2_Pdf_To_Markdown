@@ -32,6 +32,18 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def read_root():
     return FileResponse(STATIC_DIR / "index.html")
 
+import logging
+import traceback
+from datetime import datetime
+
+# Setup logging
+log_filename = f"error_log_{datetime.now().strftime('%Y%m%d')}.txt"
+logging.basicConfig(
+    filename=log_filename,
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
@@ -43,19 +55,22 @@ async def upload_file(file: UploadFile = File(...)):
     
     pdf_path = file_dir / "original.pdf"
     
-    with open(pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Process the PDF
-    processor = PDFProcessor(str(pdf_path))
-    md_path = file_dir / "content.md"
-    json_path = file_dir / "mapping.json"
-    
     try:
+        with open(pdf_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Process the PDF
+        processor = PDFProcessor(str(pdf_path))
+        md_path = file_dir / "content.md"
+        json_path = file_dir / "mapping.json"
+        
         processor.save_results(str(md_path), str(json_path))
     except Exception as e:
-        # Cleanup on failure
-        shutil.rmtree(file_dir)
+        error_msg = traceback.format_exc()
+        print(f"Processing error: {error_msg}")
+        logging.error(f"Error processing file {file.filename} (ID: {file_id}):\n{error_msg}")
+        # Cleanup on failure - keep for debugging now
+        # shutil.rmtree(file_dir)
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
     return {"file_id": file_id, "filename": file.filename}

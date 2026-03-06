@@ -1,0 +1,7 @@
+2026-03-06 16:50:36,762 - ERROR - Error processing file ¿Ì¬€_2026_03_03_11_00_10.pdf (ID: fe80ae7d-a804-49ec-8b4d-a7bec4576717):
+Traceback (most recent call last):
+  File "C:\gzb_file_to_github\P2_Pdf_To_Markdown\backend\main.py", line 67, in upload_file
+    processor.save_results(str(md_path), str(json_path))
+    ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PDFProcessor' object has no attribute 'save_results'
+
