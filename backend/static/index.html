@@ -30,6 +30,7 @@
                 <span id="pageInfo">Page 1</span>
                 <input type="number" id="pageJump" min="1" style="width: 50px">
                 <button onclick="jumpToPage()">Go</button>
+                <button id="selectionModeBtn" onclick="toggleSelectionMode()">Enable Selection</button>
             </div>
             <div id="pdfViewer" class="pdf-viewer"></div>
         </div>
@@ -37,6 +38,14 @@
         <div class="markdown-container" id="markdownContainer">
             <div id="markdownContent"></div>
         </div>
+    </div>
+    
+    <div id="floatingPanel" class="floating-panel" style="display: none;">
+        <div class="panel-header">
+            <span>Selected Text</span>
+            <button onclick="closePanel()">X</button>
+        </div>
+        <div id="panelContent" class="panel-content"></div>
     </div>
 
     <script src="/static/app.js"></script>

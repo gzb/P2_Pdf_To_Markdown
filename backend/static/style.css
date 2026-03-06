@@ -83,12 +83,48 @@ header {
     border-left: 3px solid orange;
 }
 
-.highlight-box {
+.floating-panel {
+    position: fixed;
+    right: 20px;
+    top: 80px;
+    width: 300px;
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    background: #333;
+    color: white;
+    padding: 5px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header button {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.panel-content {
+    padding: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.selection-box {
+    border: 2px dashed blue;
+    background-color: rgba(0, 0, 255, 0.1);
     position: absolute;
-    background-color: rgba(255, 255, 0, 0.3);
-    border: 1px solid rgba(255, 165, 0, 0.5);
-    pointer-events: none; /* Let clicks pass through */
-    z-index: 10;
+    pointer-events: none;
 }
 
 /* Ensure canvas is centered but can be larger than container */

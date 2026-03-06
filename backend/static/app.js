@@ -182,26 +182,93 @@ async function renderSinglePage(num, container) {
 }
 
 function drawHighlightBox(bbox, viewport, container) {
+    // bbox is [x0, y0, x1, y1] from PyMuPDF (top-left origin)
+    // viewport.convertToViewportRectangle expects [x0, y0, x1, y1] but PDF coordinates (bottom-left origin)
+    
+    // PyMuPDF gives coordinates where y increases downwards (0,0 is top-left).
+    // PDF.js default viewport expects coordinates where y increases upwards (0,0 is bottom-left).
+    // HOWEVER, PyMuPDF can export in PDF coordinates too, but usually it's screen coordinates.
+    // If PyMuPDF bbox is (x0, top, x1, bottom), we might need to flip Y.
+    
+    // But wait, if we use viewport.convertToViewportPoint for (x, y), it expects PDF point.
+    // Let's look at how PyMuPDF extracts. get_text("blocks") returns (x0, y0, x1, y1, ...)
+    // These are usually unscaled PDF coordinates, but Origin is Top-Left for PyMuPDF by default?
+    // Actually PyMuPDF uses Top-Left origin for everything usually.
+    // PDF uses Bottom-Left.
+    
+    // So y_pdf = page_height - y_pymupdf
+    // Let's try to convert PyMuPDF y to PDF y.
+    
+    // We need page height. Viewport has it. viewport.rawDims.pageHeight?
+    // Or just viewport.viewBox?
+    
+    // Actually, let's try a simpler approach. 
+    // If PyMuPDF coordinates are (x, y) from top-left, and we render with PDF.js
+    // PDF.js renders to a canvas. The canvas is just pixels.
+    // We can just map PyMuPDF coordinates directly to Canvas pixels if we know the scale.
+    // PyMuPDF coordinates are in "points" (1/72 inch).
+    // PDF.js viewport.scale is pixels per point.
+    
+    // So: pixel_x = coord_x * scale
+    //     pixel_y = coord_y * scale
+    // This works IF PyMuPDF's (0,0) matches PDF.js rendered (0,0).
+    // PDF.js renders the PDF page. If the PDF has a CropBox/MediaBox, it might be shifted.
+    
+    // Let's try simple scaling again, but ensure we use the right width/height logic.
+    // And remove viewport.convertToViewportRectangle because that assumes PDF coordinates (bottom-left).
+    
     const [x0, y0, x1, y1] = bbox;
+    
+    const div = document.createElement('div');
+    div.className = 'highlight-box';
+    div.style.position = 'absolute';
+    div.style.zIndex = '10';
+    div.style.pointerEvents = 'none';
+    
+    // Add flag icon
+    const flag = document.createElement('div');
+    flag.innerHTML = '🚩'; 
+    flag.style.position = 'absolute';
+    flag.style.top = '-20px';
+    flag.style.left = '-5px';
+    flag.style.fontSize = '16px';
+    flag.style.zIndex = '100';
+    div.appendChild(flag);
+
+    // Check if we need to rely on viewport or simple scaling
+    // Viewport handles rotation and offsets (crop box).
+    // So using viewport.convertToViewportRectangle is better IF we pass the right PDF coordinates.
+    // If PyMuPDF gave us Top-Left Y, and PDF.js expects Bottom-Left Y:
+    // y_bottom_left = page_height - y_top_left
+    
+    // Let's try using simple scaling first as it worked partially before but maybe offset was wrong?
+    // The previous implementation used simple scaling.
+    // Let's stick to simple scaling but make sure we use the current scale of the viewport.
+    
+    // Note: viewport.scale is the scale factor.
+    // But we should use the viewport's transform to be safe against rotation.
+    // For now, let's assume no rotation and simple scaling.
     
     const width = (x1 - x0) * currentScale;
     const height = (y1 - y0) * currentScale;
     const left = x0 * currentScale;
     const top = y0 * currentScale;
     
-    const div = document.createElement('div');
-    div.className = 'highlight-box';
     div.style.left = `${left}px`;
     div.style.top = `${top}px`;
     div.style.width = `${width}px`;
     div.style.height = `${height}px`;
-    div.style.backgroundColor = 'rgba(255, 0, 0, 0.3)'; // Red highlight
-    div.style.border = '1px solid rgba(255, 0, 0, 0.5)';
+    div.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+    div.style.border = '1px solid rgba(255, 0, 0, 0.8)';
     
     container.appendChild(div);
-    
     div.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+
+let isSelectionMode = false;
+let startX, startY;
+let selectionBox = null;
+let currentSelectionPage = null;
 
 function jumpToPage() {
     const page = parseInt(document.getElementById('pageJump').value);
@@ -211,6 +278,108 @@ function jumpToPage() {
             pageContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     }
+}
+
+function toggleSelectionMode() {
+    isSelectionMode = !isSelectionMode;
+    const btn = document.getElementById('selectionModeBtn');
+    btn.textContent = isSelectionMode ? 'Disable Selection' : 'Enable Selection';
+    btn.style.backgroundColor = isSelectionMode ? '#ff4d4f' : '';
+    btn.style.color = isSelectionMode ? 'white' : '';
+    
+    const viewer = document.getElementById('pdfViewer');
+    if (isSelectionMode) {
+        viewer.style.cursor = 'crosshair';
+        viewer.addEventListener('mousedown', startSelection);
+    } else {
+        viewer.style.cursor = 'auto';
+        viewer.removeEventListener('mousedown', startSelection);
+        if (selectionBox) selectionBox.remove();
+    }
+}
+
+function startSelection(e) {
+    if (!isSelectionMode) return;
+    
+    // Find which page we are clicking on
+    const pageContainer = e.target.closest('.pdf-page-container');
+    if (!pageContainer) return;
+    
+    currentSelectionPage = parseInt(pageContainer.id.replace('page-container-', ''));
+    
+    const rect = pageContainer.getBoundingClientRect();
+    startX = e.clientX - rect.left;
+    startY = e.clientY - rect.top;
+    
+    if (selectionBox) selectionBox.remove();
+    selectionBox = document.createElement('div');
+    selectionBox.className = 'selection-box';
+    selectionBox.style.left = startX + 'px';
+    selectionBox.style.top = startY + 'px';
+    pageContainer.appendChild(selectionBox);
+    
+    const onMouseMove = (moveEvent) => {
+        const curX = moveEvent.clientX - rect.left;
+        const curY = moveEvent.clientY - rect.top;
+        
+        const left = Math.min(startX, curX);
+        const top = Math.min(startY, curY);
+        const width = Math.abs(startX - curX);
+        const height = Math.abs(startY - curY);
+        
+        selectionBox.style.left = left + 'px';
+        selectionBox.style.top = top + 'px';
+        selectionBox.style.width = width + 'px';
+        selectionBox.style.height = height + 'px';
+    };
+    
+    const onMouseUp = async (upEvent) => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        
+        // Extract coordinates in PDF points
+        const finalRect = selectionBox.getBoundingClientRect();
+        const containerRect = pageContainer.getBoundingClientRect();
+        
+        const x0 = (parseFloat(selectionBox.style.left)) / currentScale;
+        const y0 = (parseFloat(selectionBox.style.top)) / currentScale;
+        const x1 = (parseFloat(selectionBox.style.left) + parseFloat(selectionBox.style.width)) / currentScale;
+        const y1 = (parseFloat(selectionBox.style.top) + parseFloat(selectionBox.style.height)) / currentScale;
+        
+        // Call backend to extract text
+        await extractTextFromArea(currentSelectionPage, [x0, y0, x1, y1]);
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+async function extractTextFromArea(page, bbox) {
+    if (!currentFileId) return;
+    
+    try {
+        const response = await fetch(`/files/${currentFileId}/extract_text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ page, bbox })
+        });
+        
+        const data = await response.json();
+        showFloatingPanel(data.text);
+    } catch (error) {
+        console.error("Extraction error:", error);
+    }
+}
+
+function showFloatingPanel(text) {
+    const panel = document.getElementById('floatingPanel');
+    const content = document.getElementById('panelContent');
+    content.textContent = text || "(No text found in this area)";
+    panel.style.display = 'flex';
+}
+
+function closePanel() {
+    document.getElementById('floatingPanel').style.display = 'none';
 }
 
 function changeZoom(delta) {
@@ -253,8 +422,11 @@ async function performSearch() {
                 div.style.backgroundColor = '#fff';
                 
                 const text = document.createElement('div');
-                text.textContent = result.text;
-                text.style.fontWeight = 'bold';
+                // Highlight query in text
+                const regex = new RegExp(`(${query})`, 'gi');
+                text.innerHTML = result.text.replace(regex, '<span style="color: red; font-weight: bold;">$1</span>');
+                // text.textContent = result.text; // Old way
+                text.style.fontWeight = 'normal'; // Changed from bold to normal for better readability of context
                 
                 const info = document.createElement('div');
                 info.textContent = `Page ${result.page}`;
