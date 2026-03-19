@@ -148,7 +148,7 @@ def draw_boxes_on_images_ds_ocr(json_folder, img_folder, output_img_folder):
                 # 所以要将 boxes 的坐标还原到原图大小，再缩放到当前打开图片的实际大小。
                 # 坐标在 1024 宽度下的值 -> 还原为实际图片宽度下的值: coord * (img.width / 1024)
                 # (假设打开的 img.width 等于 orig_w，或者我们需要在当前 img 上画，所以基于 img.width)
-                scale_factor = img.width / 1110.0
+                scale_factor = img.width / img.width
                 
                 # 获取 boxes (注意：不同格式可能叫 boxes 或 boxs，根据要求是 boxes)
                 boxes = page_data.get("boxes", [])
