@@ -171,6 +171,117 @@ def draw_boxes_on_images_ds_ocr(json_folder, img_folder, output_img_folder):
         except Exception as e:
             print(f"处理文件 {img_name} 时发生错误: {e}")
 
+def is_contained_or_overlap(cand_box, target_box):
+    # cand_box: [x0, y0, x1, y1]
+    # target_box: [X0, Y0, X1, Y1]
+    
+    # Relaxed containment: Center of cand is inside target
+    cx = (cand_box[0] + cand_box[2]) / 2
+    cy = (cand_box[1] + cand_box[3]) / 2
+    
+    if (target_box[0] <= cx <= target_box[2] and 
+        target_box[1] <= cy <= target_box[3]):
+        return True
+        
+    return False
+
+def merge_py_json_to_ds_json(ds_json_folder, py_json_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    
+    import copy
+    
+    for filename in os.listdir(ds_json_folder):
+        if not filename.endswith('.json'):
+            continue
+            
+        ds_path = os.path.join(ds_json_folder, filename)
+        py_path = os.path.join(py_json_folder, filename)
+        out_path = os.path.join(output_folder, filename)
+        
+        if not os.path.exists(py_path):
+            print(f"警告: 找不到对应的 py_json 文件 {py_path}")
+            continue
+            
+        try:
+            with open(ds_path, 'r', encoding='utf-8') as f:
+                ds_data = json.load(f)
+            with open(py_path, 'r', encoding='utf-8') as f:
+                py_data = json.load(f)
+                
+            # 读取尺寸
+            image_dims = ds_data.get("image_dims", {})
+            if isinstance(image_dims, list) and len(image_dims) > 0:
+                image_dims = image_dims[0]
+            
+            ds_w = image_dims.get("w", 1024)
+            ds_h = image_dims.get("h", 1024)
+            
+            py_w = py_data.get("width", 1)
+            py_h = py_data.get("height", 1)
+            
+            # 计算缩放比例 (将 py 坐标转为 ds 坐标)
+            scale_x = ds_w / py_w
+            scale_y = ds_h / py_h
+            
+            # 转换 py_json 中的 bbox
+            py_blocks = py_data.get("blocks", [])
+            for block in py_blocks:
+                bbox = block.get("bbox")
+                if bbox and len(bbox) == 4:
+                    block["ds_bbox"] = [
+                        bbox[0] * scale_x,
+                        bbox[1] * scale_y,
+                        bbox[2] * scale_x,
+                        bbox[3] * scale_y
+                    ]
+            
+            # 遍历 ds_json 中的 boxes
+            ds_boxes = ds_data.get("boxes", [])
+            for box_obj in ds_boxes:
+                # 兼容字典格式或直接数组格式
+                is_dict = isinstance(box_obj, dict)
+                bbox = box_obj.get("box") if is_dict else box_obj
+                
+                if bbox and len(bbox) == 4:
+                    # 将 box 中的左上角的x,y的值减小5，右下角的x,y的值加大5
+                    target_box = [
+                        bbox[0] - 5,
+                        bbox[1] - 5,
+                        bbox[2] + 5,
+                        bbox[3] + 5
+                    ]
+                    
+                    matches = []
+                    # 从 py_json 中寻找落在 target_box 内的文本块
+                    for p_block in py_blocks:
+                        p_bbox = p_block.get("ds_bbox")
+                        if p_bbox:
+                            if is_contained_or_overlap(p_bbox, target_box):
+                                matches.append(p_block)
+                                
+                    # 从上到下排序 (Y优先)
+                    matches.sort(key=lambda x: x["ds_bbox"][1])
+                    
+                    # 链接 text
+                    combined_text = "".join([m.get("text", "") for m in matches])
+                    
+                    # 写入到与 box 属性平级的节点中
+                    if is_dict:
+                        box_obj["text_content"] = combined_text
+                    else:
+                        # 如果原来直接是数组，无法添加平级属性，这里为了保持结构可能需要修改原数据结构
+                        # 但根据提示，通常是字典 {"label": "...", "box": [...]}
+                        pass 
+                        
+            # 保存新文件
+            with open(out_path, 'w', encoding='utf-8') as f:
+                json.dump(ds_data, f, ensure_ascii=False, indent=4)
+                
+            print(f"合并完成并保存: {out_path}")
+            
+        except Exception as e:
+            print(f"处理文件 {filename} 时发生错误: {e}")
+
 if __name__ == "__main__":
     pdf_file = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\test_data\人民法院思想政治建设读本3.7_2026_03_09_13_53_13.pdf"
     out_folder = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\test_data\pdf-2-json-pyhton"
@@ -180,6 +291,7 @@ if __name__ == "__main__":
     # 新需求路径
     ds_json_folder = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\test_data\pdf-2-json"
     ds_marked_img_folder = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\test_data\pdf-1-images-ds-ocr"
+    merged_output_folder = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\test_data\pdf-2-json-py-to-ds"
     
     # 第一步：提取 JSON 和生成图片
     # extract_pdf_to_json(pdf_file, out_folder, img_folder)
@@ -190,6 +302,11 @@ if __name__ == "__main__":
     # print("绘制完成！")
     
     # 第三步：根据 ds-ocr 的 JSON (1024宽度基准) 在图片上绘制红框
-    print("开始根据 DS-OCR JSON 绘制红框...")
-    draw_boxes_on_images_ds_ocr(ds_json_folder, img_folder, ds_marked_img_folder)
-    print("DS-OCR 绘制完成！")
+    # print("开始根据 DS-OCR JSON 绘制红框...")
+    # draw_boxes_on_images_ds_ocr(ds_json_folder, img_folder, ds_marked_img_folder)
+    # print("DS-OCR 绘制完成！")
+    
+    # 第四步：合并 py_json 文本到 ds_json
+    print("开始合并文本到 DS-OCR JSON...")
+    merge_py_json_to_ds_json(ds_json_folder, out_folder, merged_output_folder)
+    print("合并完成！")
