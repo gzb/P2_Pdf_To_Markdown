@@ -21,9 +21,9 @@ def extract_pdf_to_json(pdf_path, output_dir, images_dir):
     for page_num in range(total_pages):
         page = doc[page_num]
         
-        # 使用 "blocks" 模式提取，返回的每个 block 是一个元组:
-        # (x0, y0, x1, y1, "text", block_no, block_type)
-        blocks = page.get_text("blocks")
+        # 使用 "dict" 模式提取，可以获取字体大小、上标等更丰富的排版信息
+        dict_data = page.get_text("dict")
+        blocks = dict_data.get("blocks", [])
 
         page_data = {
             "page": page_num + 1,
@@ -31,15 +31,84 @@ def extract_pdf_to_json(pdf_path, output_dir, images_dir):
             "height": page.rect.height,
             "blocks": []
         }
+        
+        # 建立 a-t 到 ①-⑳ 的映射字典
+        CIRCLE_MAP = {
+            'a': '①', 'b': '②', 'c': '③', 'd': '④', 'e': '⑤', 
+            'f': '⑥', 'g': '⑦', 'h': '⑧', 'i': '⑨', 'j': '⑩',
+            'k': '⑪', 'l': '⑫', 'm': '⑬', 'n': '⑭', 'o': '⑮',
+            'p': '⑯', 'q': '⑰', 'r': '⑱', 's': '⑲', 't': '⑳'
+        }
 
         for b in blocks:
-            # block_type == 0 代表文本块
-            if b[6] == 0:
-                text = b[4].strip()
-                if text:  # 忽略空文本块
+            # type == 0 代表文本块
+            if b.get("type") == 0:
+                block_text = ""
+                lines = b.get("lines", [])
+                
+                # 判断整个block是否包含中文，作为上下文辅助判断
+                block_has_chinese = any('\u4e00' <= c <= '\u9fff' for l in lines for s in l.get("spans", []) for c in s.get("text", ""))
+                
+                for line in lines:
+                    line_text = ""
+                    spans = line.get("spans", [])
+                    if not spans:
+                        continue
+                    
+                    max_size = max((s.get("size", 10) for s in spans), default=10)
+                    line_bbox = line.get("bbox", [0,0,0,0])
+                    
+                    for i, span in enumerate(spans):
+                        text = span.get("text", "")
+                        clean_text = text.strip()
+                        
+                        # 启发式：处理脚注图标被错误识别为 a, b, c 的问题
+                        # 检查是否全部由字母组成（可能有空格）
+                        if clean_text and all(c.isspace() or ('a' <= c.lower() <= 'z') for c in clean_text):
+                            is_superscript = (span.get("flags", 0) & 1) != 0
+                            span_bbox = span.get("bbox", [0,0,0,0])
+                            
+                            # 判断是否字体更小且位置偏上（典型上标特征）
+                            is_smaller_and_higher = (span.get("size", 10) < max_size * 0.95) and (span_bbox[3] < line_bbox[3] - max_size * 0.1)
+                            
+                            # 判断是否位于页面底部的行首（典型脚注说明特征）
+                            is_footnote_bottom = (i == 0 and block_has_chinese and line_bbox[1] > page.rect.height * 0.7)
+                            
+                            # 判断是否为特殊符号字体
+                            font_lower = span.get("font", "").lower()
+                            font_is_symbol = any(x in font_lower for x in ['symbol', 'wingding', 'dingbat', 'ropesequencenumber'])
+
+                            
+                            if is_superscript or is_smaller_and_higher or is_footnote_bottom or font_is_symbol:
+                                new_text = ""
+                                for c in text:
+                                    if 'a' <= c.lower() <= 'z':
+                                        new_text += CIRCLE_MAP.get(c.lower(), c)
+                                    else:
+                                        new_text += c
+                                text = new_text
+                        
+                        # 补充空格逻辑：恢复英文单词之间的自然间距
+                        if i > 0:
+                            prev_span = spans[i-1]
+                            gap = span.get("bbox", [0,0,0,0])[0] - prev_span.get("bbox", [0,0,0,0])[2]
+                            if gap > max_size * 0.2:
+                                prev_char = prev_span.get("text", "")[-1:]
+                                curr_char = text[:1]
+                                # 如果前后都不是中文，则补充空格
+                                if prev_char and curr_char:
+                                    if not ('\u4e00' <= prev_char <= '\u9fff' or '\u4e00' <= curr_char <= '\u9fff'):
+                                        line_text += " "
+
+                        line_text += text
+                        
+                    block_text += line_text + "\n"
+                    
+                block_text = block_text.strip()
+                if block_text:
                     page_data["blocks"].append({
-                        "bbox": [b[0], b[1], b[2], b[3]],
-                        "text": text
+                        "bbox": b.get("bbox"),
+                        "text": block_text
                     })
 
         # 按页码生成 json 文件名 (例如: 1.json)
@@ -259,8 +328,8 @@ def merge_py_json_to_ds_json(ds_json_folder, py_json_folder, output_folder):
                             if is_contained_or_overlap(p_bbox, target_box):
                                 matches.append(p_block)
                                 
-                    # 从上到下排序 (Y优先)
-                    matches.sort(key=lambda x: x["ds_bbox"][1])
+                    # 从上到下排序 (Y优先)-Gzb修改不排序
+                    #matches.sort(key=lambda x: x["ds_bbox"][1])
                     
                     # 链接 text
                     combined_text = "".join([m.get("text", "") for m in matches])

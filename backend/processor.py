@@ -68,6 +68,13 @@ class PDFProcessor:
                 if not 'table_bboxes' in locals() or table_bboxes is None:
                     table_bboxes = []
                 
+                CIRCLE_MAP = {
+                    'a': '①', 'b': '②', 'c': '③', 'd': '④', 'e': '⑤', 
+                    'f': '⑥', 'g': '⑦', 'h': '⑧', 'i': '⑨', 'j': '⑩',
+                    'k': '⑪', 'l': '⑫', 'm': '⑬', 'n': '⑭', 'o': '⑮',
+                    'p': '⑯', 'q': '⑰', 'r': '⑱', 's': '⑲', 't': '⑳'
+                }
+                
                 for block in text_blocks:
                     if block["type"] != 0: # 0 is text
                         continue
@@ -82,9 +89,43 @@ class PDFProcessor:
                     block_text = ""
                     max_span_size = 0
                     
+                    # 辅助判断上下文是否有中文
+                    block_has_chinese = False
+                    if "lines" in block:
+                        for line in block["lines"]:
+                            for span in line["spans"]:
+                                if any('\u4e00' <= c <= '\u9fff' for c in span["text"]):
+                                    block_has_chinese = True
+                                    break
+                            if block_has_chinese: break
+                    
                     for line in block["lines"]:
-                        for span in line["spans"]:
-                            block_text += span["text"]
+                        line_bbox = line.get("bbox", [0,0,0,0])
+                        max_size_in_line = max((s.get("size", 10) for s in line.get("spans", [])), default=10)
+                        
+                        for i, span in enumerate(line["spans"]):
+                            text = span["text"]
+                            clean_text = text.strip()
+                            
+                            # 启发式处理脚注图标
+                            if clean_text and all(c.isspace() or ('a' <= c.lower() <= 'z') for c in clean_text):
+                                is_superscript = (span.get("flags", 0) & 1) != 0
+                                span_bbox = span.get("bbox", [0,0,0,0])
+                                is_smaller_and_higher = (span.get("size", 10) < max_size_in_line * 0.95) and (span_bbox[3] < line_bbox[3] - max_size_in_line * 0.1)
+                                is_footnote_bottom = (i == 0 and block_has_chinese and line_bbox[1] > page.rect.height * 0.7)
+                                font_lower = span.get("font", "").lower()
+                                font_is_symbol = any(x in font_lower for x in ['symbol', 'wingding', 'dingbat', 'ropesequencenumber'])
+                                
+                                if is_superscript or is_smaller_and_higher or is_footnote_bottom or font_is_symbol:
+                                    new_text = ""
+                                    for c in text:
+                                        if 'a' <= c.lower() <= 'z':
+                                            new_text += CIRCLE_MAP.get(c.lower(), c)
+                                        else:
+                                            new_text += c
+                                    text = new_text
+                                    
+                            block_text += text
                             if span["size"] > max_span_size:
                                 max_span_size = span["size"]
                         block_text += " " # Add space between lines in a block
