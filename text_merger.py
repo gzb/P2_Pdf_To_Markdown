@@ -1,45 +1,105 @@
-import re
+import difflib
 
 def merge_text(deepseek_ocr_text: str, box_text: str) -> str:
     """
     合并 DeepSeek OCR 识别的文本与 PyMuPDF 提取的文本（box_text）。
     
     规则：
-    1. deepseek_ocr_text 提供了正确的控制符号（如空格、回车、换行等），但可能有错别字。
+    1. deepseek_ocr_text 提供了正确的控制符号（如空格、回车、换行等），但可能有错别字（或多字、少字）。
     2. box_text 提供了正确的文本内容，但控制符号（排版）可能混乱或不正确。
-    3. 将 box_text 中的真实字符按顺序“填入” deepseek_ocr_text 的排版骨架中。
+    3. 使用 difflib 进行序列对齐，将 box_text 中的真实字符“智能填入” deepseek_ocr_text 的排版骨架中，避免因字数不一致导致的错位。
     
     :param deepseek_ocr_text: 包含正确排版但可能有错别字的字符串
     :param box_text: 包含正确文字但排版可能有误的字符串
     :return: 合并后的字符串
     """
     
-    # 提取 box_text 中所有非空白字符，作为“正确字符”的来源队列
-    # 使用 \s 匹配所有空白字符（包括空格、\n、\r、\t 等），并将其过滤掉
-    box_chars = [char for char in box_text if not char.isspace()]
-    box_len = len(box_chars)
-    box_idx = 0
+    # 提取非空字符并记录其在 deepseek_ocr_text 中的原始索引
+    ds_seq = []
+    ds_pos_map = []
+    for i, char in enumerate(deepseek_ocr_text):
+        if not char.isspace():
+            ds_seq.append(char)
+            ds_pos_map.append(i)
+            
+    # 提取 box_text 中的非空字符序列
+    box_seq = [char for char in box_text if not char.isspace()]
+    
+    # 使用 difflib 寻找最长公共子序列（对齐两个纯字符序列）
+    sm = difflib.SequenceMatcher(None, ds_seq, box_seq)
     
     result = []
+    last_ds_idx = 0
     
-    # 遍历带有正确控制符号的 deepseek_ocr_text
-    for char in deepseek_ocr_text:
-        if char.isspace():
-            # 如果是空白/控制符号（空格、换行等），直接保留 DeepSeek 的格式
-            result.append(char)
-        else:
-            # 如果是实际可见字符，则从 box_text 提取正确的字符进行替换
-            if box_idx < box_len:
-                result.append(box_chars[box_idx])
-                box_idx += 1
-            else:
-                # 如果 box_text 的字符已经用完，但 deepseek 还有多余字符，则保留 deepseek 原字符（兜底容错）
-                result.append(char)
+    # 辅助函数：将 deepseek_ocr_text 中被跳过的控制符号（空格、换行）补齐
+    def catch_up_spaces(target_idx):
+        nonlocal last_ds_idx
+        while last_ds_idx < target_idx:
+            if deepseek_ocr_text[last_ds_idx].isspace():
+                result.append(deepseek_ocr_text[last_ds_idx])
+            last_ds_idx += 1
+
+    # 根据对齐结果进行合并
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == 'equal':
+            # 完全匹配，填入 box 的字符，并保留对应位置的空格
+            for k in range(i2 - i1):
+                ds_idx = ds_pos_map[i1 + k]
+                catch_up_spaces(ds_idx)
+                result.append(box_seq[j1 + k])
+                last_ds_idx = ds_idx + 1
                 
-    # 如果 deepseek_ocr_text 遍历完后，box_text 还有剩余未填入的字符，则将其追加到末尾
-    if box_idx < box_len:
-        result.append("".join(box_chars[box_idx:]))
-        
+        elif tag == 'replace':
+            # 替换：可能字符数不同。先补齐第一个字符前的空格
+            if i1 < i2:
+                catch_up_spaces(ds_pos_map[i1])
+            
+            box_idx = j1
+            if i1 < i2:
+                ds_idx_start = ds_pos_map[i1]
+                ds_idx_end = ds_pos_map[i2 - 1] + 1
+                
+                # 遍历 ds 这段区间，遇到可见字符就尝试用 box 字符替换，遇到空格则保留
+                for idx in range(ds_idx_start, ds_idx_end):
+                    if deepseek_ocr_text[idx].isspace():
+                        result.append(deepseek_ocr_text[idx])
+                    else:
+                        if box_idx < j2:
+                            result.append(box_seq[box_idx])
+                            box_idx += 1
+                last_ds_idx = ds_idx_end
+                
+            # 如果 ds 的槽位用完了，box 还有多余的替换字符，直接追加
+            while box_idx < j2:
+                result.append(box_seq[box_idx])
+                box_idx += 1
+                
+        elif tag == 'delete':
+            # 删除：ds 中多余的字符（例如 OCR 幻觉产生的多余字符）。
+            # 不输出字符，但要保留这段区间内的空格
+            if i1 < i2:
+                ds_idx_start = ds_pos_map[i1]
+                ds_idx_end = ds_pos_map[i2 - 1] + 1
+                catch_up_spaces(ds_idx_start)
+                for idx in range(ds_idx_start, ds_idx_end):
+                    if deepseek_ocr_text[idx].isspace():
+                        result.append(deepseek_ocr_text[idx])
+                last_ds_idx = ds_idx_end
+                
+        elif tag == 'insert':
+            # 插入：box 中多出来的字符。
+            # 直接在当前位置插入，先补齐到当前位置的空格
+            if i1 < len(ds_pos_map):
+                catch_up_spaces(ds_pos_map[i1])
+            else:
+                catch_up_spaces(len(deepseek_ocr_text))
+            
+            for k in range(j2 - j1):
+                result.append(box_seq[j1 + k])
+
+    # 补齐末尾可能剩余的控制符号
+    catch_up_spaces(len(deepseek_ocr_text))
+    
     return "".join(result)
 
 if __name__ == "__main__":
