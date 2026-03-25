@@ -72,6 +72,10 @@ def merge_paragraph_blocks(json_data):
                 
                 if is_cut_off and (is_cross_column or is_bottom_of_page or is_separated):
                     # 执行合并
+                    # 记录被合并区块的原始文本长度
+                    original_len = len(pending_text_block["text_content"])
+                    added_len = len(text_content)
+                    
                     pending_text_block["text_content"] += text_content
                     
                     # 更新边界框为包含两者的最小包围盒（或者保留各自的盒子记录）
@@ -82,10 +86,13 @@ def merge_paragraph_blocks(json_data):
                         max(cb[3], nb[3])
                     ]
                     
-                    # 可选：记录合并前的所有原始坐标框
+                    # 可选：记录合并前的所有原始坐标框和对应文本长度
                     if "merged_boxes" not in pending_text_block:
                         pending_text_block["merged_boxes"] = [cb]
+                        pending_text_block["merged_text_lens"] = [original_len]
+                        
                     pending_text_block["merged_boxes"].append(nb)
+                    pending_text_block["merged_text_lens"].append(added_len)
                     
                     # 合并后重置分隔标志，因为我们刚刚接上了一个文本块
                     separated_by_non_text = False
