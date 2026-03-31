@@ -47,18 +47,40 @@ def process_file(input_path, output_path):
                 new_boxs.append(flattened_group)
             item["boxs"] = new_boxs
             
-        # 处理 nodes_text_len
+        # 处理 nodes_text_len 和 pages 的联动
         if "nodes_text_len" in item:
             new_lens = []
-            for group in item["nodes_text_len"]:
+            new_pages = []
+            has_pages = "pages" in item
+            
+            for i, group in enumerate(item["nodes_text_len"]):
                 flattened_group = []
+                is_nested = False
                 for sub_item in group:
                     if isinstance(sub_item, list):
                         flattened_group.extend(sub_item)
+                        is_nested = True
                     else:
                         flattened_group.append(sub_item)
                 new_lens.append(flattened_group)
+                
+                # 如果发现过度嵌套，需要调整对应的 pages 数组
+                if has_pages and i < len(item["pages"]):
+                    page_group = item["pages"][i]
+                    if is_nested:
+                        # 读取第一个值
+                        first_page_val = page_group[0] if len(page_group) > 0 else "1"
+                        # 添加和 "nodes_text_len" (展平后) 数组中数量一样多的相同记录
+                        new_page_group = [first_page_val] * len(flattened_group)
+                        new_pages.append(new_page_group)
+                    else:
+                        new_pages.append(page_group)
+                elif has_pages:
+                    new_pages.append([]) # 兜底防止索引越界
+                    
             item["nodes_text_len"] = new_lens
+            if has_pages:
+                item["pages"] = new_pages
             
         # 处理 nodes_index
         if "nodes_index" in item:
