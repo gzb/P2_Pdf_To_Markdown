@@ -23,3 +23,19 @@
 
 最终目标是根据pdf-2-json和pdf-2-json-python目录下的json文件，布局和文字结合实现保留完美布局和正确数据的目的，实现页内数据的尽可能准确的合并，实现跨页内容数据的尽可能准确地合并，在进行合并的时候，避免数组的过度嵌套。
 最终合并出一个：processed_merged_nodes_three-py-to-ds-curpage-merged_format-v2.json的文件。
+
+
+
+====
+请修改代码：
+
+最终结果文件中要保留：
+1. "texts"  "ref"这些节点的数据集合，"image_dims"里面的w,h的值要保留原始的值，不要改为1024
+
+
+====
+请编写单独页面代码：
+
+读取：C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\1_Json\processed_data_ok.json
+文件
+遍历："content"节点，读取里面的内容，将#，空格替换后，统计总的字数。将结果写入文件总字数文件中。

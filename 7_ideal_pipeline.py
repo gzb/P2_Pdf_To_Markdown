@@ -1,189 +1,10 @@
-#pdf转图片相关
 import os
-import fitz  # PyMuPDF
-from PIL import Image
-import io
 import json
-
-#图片转json相关
-import time
-import requests
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import deque
-
-#json合并相关
-import re
-import requests
 import difflib
 
-#第1大步：pdf转图片相关===================================================================
-def pdf_to_images(pdf_file: str, output_folder: str):
-    """Convert PDF to images and save them in the output folder."""
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    # Open the PDF file
-    pdf_doc = fitz.open(pdf_file)
-
-    # Set the zoom factor (for better resolution)
-    zoom = 144 / 72.0  # Higher zoom for higher quality
-    matrix = fitz.Matrix(zoom, zoom)
-
-    # Loop through each page in the PDF
-    for page_num in range(pdf_doc.page_count):
-        page = pdf_doc.load_page(page_num)  # Load page by page number
-        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-
-        # Convert the pixmap (image) to a BytesIO object
-        img_bytes = pixmap.tobytes("png")
-        img = Image.open(io.BytesIO(img_bytes))
-
-        # Save the image
-        #output_image_path = os.path.join(output_folder, f"page_{page_num + 1}.png")
-        output_image_path = os.path.join(output_folder, f"{page_num + 1}.png")
-        img.save(output_image_path, format="PNG")
-
-        print(f"Page {page_num + 1} converted to {output_image_path}")
-
-    pdf_doc.close()
-
-#第2大步：图片转json相关===================================================================
-
-# 定义API服务器的地址和并发限制
-api_urls = [
-    'http://192.168.0.19:8001/ocr',
-    'http://192.168.0.19:8002/ocr'
-   # 'http://192.168.0.19:8003/ocr',
-   # 'http://192.168.0.19:8004/ocr'
-]
-
-# API队列，每个队列最多保持2个任务
-api_queues = [deque() for _ in api_urls]
-
-def call_api(file_path, url):
-    """调用OCR API接口，返回结果。"""
-    try:
-        # 文件内容
-        with open(file_path, 'rb') as f:
-            file_data = f.read()
-
-        # 设置multipart/form-data的boundary和头信息
-        boundary = '----WebKitFormBoundaryacCXMQisnxWgutzv'
-        headers = {
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'Cookie': 'token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImU2ZDdhNTZiLTlhOTMtNDc1NS05NmJjLTNiNmY3NmJiNWZhYyJ9.owISsiR5TQie_FQDlBr19wQLsqU-ykbzSZe0BjbSJig; SecurityEntrance=NDhlZDk2ZWY1Yw%3D%3D;',
-            'Origin': 'http://192.168.0.19:8001',
-            'Pragma': 'no-cache',
-            'Referer': 'http://192.168.0.19:8001/docs',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-            'accept': 'application/json'
-        }
-
-        # 构造multipart/form-data请求体
-        body = (
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
-            f'Content-Type: image/png\r\n\r\n' +
-            file_data.decode('ISO-8859-1') +  # 必须将文件内容以合适的编码传输
-            f'\r\n--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="prompt_type"\r\n\r\ndocument\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="find_term"\r\n\r\n\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="custom_prompt"\r\n\r\n\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="grounding"\r\n\r\nfalse\r\n'
-            f'--{boundary}--\r\n'
-        ).encode('ISO-8859-1')  # 对整个请求体进行编码
-
-        # 发送POST请求
-        print(url)
-        response = requests.post(url, headers=headers, data=body, verify=False)
-
-        # 检查返回状态
-        if response.status_code == 200:
-            return response.json()  # 返回API响应的json内容
-        else:
-            print(f"API 调用失败，状态码: {response.status_code}")
-            print(f"错误信息: {response.text}")
-            return None
-    except Exception as e:
-        print(f"API调用异常: {e}")
-        return None
-
-def process_file(png_file, dist_path):
-    """处理单个文件的API请求，并保存结果"""
-    json_file = dist_path / (png_file.stem + '.json')
-
-    if json_file.exists():
-        print(f"文件 {json_file} 已存在，跳过")
-        return
-
-    print(f"正在处理文件: {png_file.name}")
-
-    retries = 0
-    success = False
-    result = None
-
-    while retries < 3 and not success:
-        # 查找并分配一个空闲的API服务器
-        assigned = False
-        for i in range(len(api_queues)):
-            if len(api_queues[i]) < 2:  # 每个服务器最多有2个并发
-                url = api_urls[i]
-                api_queues[i].append(png_file)  # 加入队列，表示该API正在处理任务
-                result = call_api(png_file, url)
-                if result:
-                    success = True
-                api_queues[i].remove(png_file)  # 完成任务后移除队列
-                assigned = True
-                break
-
-        if not assigned:
-            print("所有API服务器都已满载，稍后重试...")
-            retries += 1
-            time.sleep(2)  # 等待2秒后重试
-
-    if success and result:
-        # 将返回结果保存为json文件
-        with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=4)
-        print(f"文件 {json_file} 保存成功")
-    else:
-        print(f"文件 {png_file.name} 处理失败，跳过")
-
-def process_files_to_json(path_source, path_dist):
-    """并发处理文件夹中的多个文件，最大并发数为4"""
-    source_path = Path(path_source)
-    dist_path = Path(path_dist)
-    
-    # 如果目标文件夹不存在，创建它
-    dist_path.mkdir(parents=True, exist_ok=True)
-
-    # 获取文件名并按数字排序（文件名非数字时默认赋值为0）
-
-    png_files = sorted(
-        [f for f in source_path.glob('*') if f.suffix in ['.png', '.jpg']],  # 过滤出 .png 和 .jpg 文件
-        key=lambda x: (int(x.stem) if x.stem.isdigit() else 0)  # 使用 x.stem 获取文件名
-    )
-
-    # 输出 png_files 的长度
-    print(f"目录：{path_source}\n png_files 的数量为: {len(png_files)}")
-
-
-    # 使用ThreadPoolExecutor控制并发数量，最大并发数为4
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(process_file, png_file, dist_path) for png_file in png_files]
-
-        # 等待所有任务完成
-        for future in as_completed(futures):
-            future.result()  # 获取任务结果
-
-# 第3大步：Json文件合并（基于理想流水线重构）===================================================================
+# ==========================================
+# 核心工具函数
+# ==========================================
 
 def merge_text(deepseek_ocr_text: str, box_text: str) -> str:
     """结合 OCR 的完美排版与 PyMuPDF 的正确文字"""
@@ -266,6 +87,9 @@ def get_effective_last_char(text):
         last_char = text[-2]
     return last_char
 
+# ==========================================
+# 步骤 4：合并 OCR 布局与 PyMuPDF 文本
+# ==========================================
 def step4_merge_ocr_and_py_json(ocr_data, py_data):
     """
     将 py_data 中的准确文字填入 ocr_data 的完美排版中。
@@ -289,17 +113,18 @@ def step4_merge_ocr_and_py_json(ocr_data, py_data):
         
         target_box = [bbox[0]-5, bbox[1]-5, bbox[2]+5, bbox[3]+5]
         matches = [p for p in py_blocks if is_contained_or_overlap(p["ds_bbox"], target_box)]
-        
         combined_py_text = "".join([m.get("text", "") for m in matches])
         
         ocr_text = block.get("text_content", "")
         # 融合两者优点
-        if combined_py_text:
-            merged_text = merge_text(ocr_text, combined_py_text)
-            block["text_content"] = merged_text
+        merged_text = merge_text(ocr_text, combined_py_text)
+        block["text_content"] = merged_text
         
     return ocr_data
 
+# ==========================================
+# 步骤 5：页内段落合并（彻底避免过度嵌套）
+# ==========================================
 def step5_inpage_paragraph_merge(page_data, page_num):
     """
     将同页内属于同一个段落的区块合并。
@@ -322,8 +147,6 @@ def step5_inpage_paragraph_merge(page_data, page_num):
             merged_nodes.append({
                 "label": label,
                 "text_content": text_content,
-                "texts": [text_content] if text_content else [],
-                "ref": [label],
                 "boxs": [original_box] if original_box else [],
                 "pages": [str(page_num)],
                 "nodes_text_len": [0],
@@ -338,8 +161,6 @@ def step5_inpage_paragraph_merge(page_data, page_num):
         current_node = {
             "label": label,
             "text_content": text_content,
-            "texts": [text_content],
-            "ref": [label],
             "boxs": [original_box],
             "pages": [str(page_num)],
             "nodes_text_len": [len(text_content)],
@@ -354,8 +175,8 @@ def step5_inpage_paragraph_merge(page_data, page_num):
             last_char = get_effective_last_char(pending_node["text_content"])
             is_cut_off = last_char and not is_terminal_punctuation(last_char)
             
-            cb = pending_node["boxs"][-1] if pending_node["boxs"] else [0,0,0,0]
-            nb = current_node["boxs"][0] if current_node["boxs"] else [0,0,0,0]
+            cb = pending_node["boxs"][-1]
+            nb = current_node["boxs"][0]
             
             is_cross_column = abs(cb[0] - nb[0]) > page_width * 0.05
             is_bottom_of_page = cb[3] > page_height * 0.85
@@ -363,8 +184,6 @@ def step5_inpage_paragraph_merge(page_data, page_num):
             if is_cut_off and (is_cross_column or is_bottom_of_page or separated_by_non_text):
                 # 扁平化合并：直接 extend 数组，不产生嵌套
                 pending_node["text_content"] += "\n" + current_node["text_content"]
-                pending_node["texts"].extend(current_node["texts"])
-                pending_node["ref"].extend(current_node["ref"])
                 pending_node["boxs"].extend(current_node["boxs"])
                 pending_node["pages"].extend(current_node["pages"])
                 pending_node["nodes_text_len"].extend(current_node["nodes_text_len"])
@@ -377,6 +196,9 @@ def step5_inpage_paragraph_merge(page_data, page_num):
                 
     return merged_nodes
 
+# ==========================================
+# 步骤 6 & 7：跨页合并与坐标格式化（1024基准）
+# ==========================================
 def step6_crosspage_merge_and_format(all_pages_nodes):
     """
     跨页合并段落，并将最终结果的所有坐标等比例缩放至 1024 基准宽度。
@@ -399,8 +221,6 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
             if is_cut_off:
                 # 跨页合并，依然使用 extend 保持扁平化
                 pending_node["text_content"] += "\n" + node["text_content"]
-                pending_node["texts"].extend(node["texts"])
-                pending_node["ref"].extend(node["ref"])
                 pending_node["boxs"].extend(node["boxs"])
                 pending_node["pages"].extend(node["pages"])
                 pending_node["nodes_text_len"].extend(node["nodes_text_len"])
@@ -416,7 +236,7 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
         for i, box in enumerate(node["boxs"]):
             if len(box) == 4:
                 # 读取对应的原始宽高
-                dim = node["image_dims"][i] if i < len(node["image_dims"]) else {"w": 1024, "h": 1024}
+                dim = node["image_dims"][i]
                 scale_x = 1024.0 / dim.get("w", 1024)
                 scale_y = 1024.0 / dim.get("h", 1024)
                 
@@ -434,50 +254,42 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
             "id": idx + 1,
             "type": node["label"],
             "content": node["text_content"],
-            "texts": node.get("texts", []),
-            "ref": node.get("ref", []),
             "page": node["pages"][0] if node["pages"] else "1",
             "pages": [node["pages"]],              # 配合原有结构套一层
             "nodes_text_len": [node["nodes_text_len"]], 
             "boxs": [scaled_boxs],                 # 此时 scaled_boxs 已经是干净的 [[x,y,x,y], [x,y,x,y]]
-            "image_dims": [node["image_dims"]]     # 恢复原始宽高的保留，不强制写死1024
+            "image_dims": [[{"w": 1024, "h": 1024} for _ in node["boxs"]]]
         })
         
     return formatted_output
 
-def ideal_pdf_to_markdown_pipeline(target_dir):
+# ==========================================
+# 主控制流 (理想代码架构示例)
+# ==========================================
+def ideal_pdf_to_markdown_pipeline(pdf_file_path, target_dir):
     """
     理想状态下的 PDF 转 Markdown 全流程调度。
     """
+    # 1. & 2. & 3. 假设这些基础步骤已经生成了初始 JSON 文件
+    # pdf_to_images(...)
+    # process_images_to_json(...) -> ocr_json_dir
+    # extract_pdf_to_json(...) -> py_json_dir
+    
     ocr_json_dir = os.path.join(target_dir, "pdf-2-json")
     py_json_dir = os.path.join(target_dir, "pdf-2-json-python")
-    mk_folder = os.path.join(target_dir, "pdf-3-mk")
-    os.makedirs(mk_folder, exist_ok=True)
     
     all_pages_nodes = []
     
-    # 获取页码文件并排序
-    json_files = []
-    if os.path.exists(ocr_json_dir):
-        json_files = [f for f in os.listdir(ocr_json_dir) if f.endswith(".json")]
-        json_files.sort(key=lambda x: int(x.split('.')[0]) if x.split('.')[0].isdigit() else 0)
-
     # 遍历所有页，执行融合与页内合并
-    for filename in json_files:
+    for filename in sorted(os.listdir(ocr_json_dir)): # 假设按页码排序
+        if not filename.endswith(".json"): continue
         page_num = filename.replace(".json", "")
         
         # 读取两套 JSON
-        ocr_path = os.path.join(ocr_json_dir, filename)
-        py_path = os.path.join(py_json_dir, filename)
-        
-        with open(ocr_path, 'r', encoding='utf-8') as f:
+        with open(os.path.join(ocr_json_dir, filename), 'r', encoding='utf-8') as f:
             ocr_data = json.load(f)
-            
-        if os.path.exists(py_path):
-            with open(py_path, 'r', encoding='utf-8') as f:
-                py_data = json.load(f)
-        else:
-            py_data = {"blocks": []}
+        with open(os.path.join(py_json_dir, filename), 'r', encoding='utf-8') as f:
+            py_data = json.load(f)
             
         # 步骤 4：融合 OCR 与 PyMuPDF
         merged_data = step4_merge_ocr_and_py_json(ocr_data, py_data)
@@ -490,39 +302,9 @@ def ideal_pdf_to_markdown_pipeline(target_dir):
     final_json_data = step6_crosspage_merge_and_format(all_pages_nodes)
     
     # 保存最终结果
-    output_path = os.path.join(mk_folder, "processed_merged_nodes_three-py-to-ds-curpage-merged_format-v2.json")
+    output_path = os.path.join(target_dir, "processed_merged_nodes_three-py-to-ds-curpage-merged_format-v2.json")
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(final_json_data, f, ensure_ascii=False, indent=4)
         
     print(f"完美流水线执行完毕！最终文件: {output_path}")
-    return output_path
 
-# ==============================================================================
-# 保留用于兼容性的外壳函数，统一调用新的理想流水线
-# ==============================================================================
-def convert_pdf_to_images(pdf_file, target_path):
-    pass
-
-def process_images_to_json(target_path):
-    pass
-
-def extract_pdf_to_json(pdf_path, output_dir):
-    pass
-
-def merge_json_to_mk(target_path):
-    pass
-
-def merge_py_json_to_ds_json(ds_json_folder, py_json_folder, output_folder):
-    pass
-
-def merge_json_to_mk_py_to_ds(target_path):
-    pass
-
-def merge_py_json_to_ds_json_curpage(merged_output_folder,merged_output_folder_curpage_merged):
-    pass
-
-def merge_json_to_mk_py_to_ds_curpage(target_path):
-    pass
-
-def merged_format_process_file(input_file, output_file):
-    pass

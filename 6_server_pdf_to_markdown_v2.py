@@ -25,7 +25,7 @@ import base64
 
 import shutil
 import time
-from Fun.Fun_OCR_Pdf_To_MarkDown import convert_pdf_to_images, process_images_to_json, merge_json_to_mk,extract_pdf_to_json,merge_py_json_to_ds_json,merge_json_to_mk_py_to_ds,merge_py_json_to_ds_json_curpage,merge_json_to_mk_py_to_ds_curpage,merged_format_process_file
+from Fun.Fun_OCR_Pdf_To_MarkDown import convert_pdf_to_images, process_images_to_json, extract_pdf_to_json, ideal_pdf_to_markdown_pipeline
 import logging
 
 import fitz  # PyMuPDF 2026.03.23
@@ -1059,127 +1059,62 @@ def process_file_list_to_deepseek_ocr(file_list: List[FileInfo]):
 
 def pdf_to_mk_main(pdf_file_path, target_path, md5_value):
     # Create the necessary directories
-    images_folder = os.path.join(target_path,md5_value, "pdf-1-images")
-    json_folder = os.path.join(target_path,md5_value, "pdf-2-json")
-    mk_folder = os.path.join(target_path, md5_value,"pdf-3-mk")
-    json_backup_folder = os.path.join(target_path,md5_value, "1_Json")
-
-    json_python_folder = os.path.join(target_path,md5_value, "pdf-2-json-python") #2026.03.23
-    merged_output_folder=os.path.join(target_path,md5_value, "pdf-2-json-py-to-ds") #2026.03.23
-    merged_output_folder_curpage_merged=os.path.join(target_path,md5_value, "pdf-2-json-py-to-ds-curpage-merged") #2026.03.25
+    base_target_dir = os.path.join(target_path, md5_value)
+    images_folder = os.path.join(base_target_dir, "pdf-1-images")
+    json_folder = os.path.join(base_target_dir, "pdf-2-json")
+    mk_folder = os.path.join(base_target_dir, "pdf-3-mk")
+    json_backup_folder = os.path.join(base_target_dir, "1_Json")
+    json_python_folder = os.path.join(base_target_dir, "pdf-2-json-python")
 
     os.makedirs(images_folder, exist_ok=True)
     os.makedirs(json_folder, exist_ok=True)
     os.makedirs(mk_folder, exist_ok=True)
     os.makedirs(json_backup_folder, exist_ok=True)
-    os.makedirs(json_python_folder, exist_ok=True) #2026.03.23
-    os.makedirs(merged_output_folder, exist_ok=True) #2026.03.23
+    os.makedirs(json_python_folder, exist_ok=True)
 
-    # Convert PDF to images
-    # 判断 pdf-1-images.json 文件是否存在
+    # 1. Convert PDF to images
     json_file_path = os.path.join(json_backup_folder, "pdf-1-images.json")
     if not os.path.exists(json_file_path):
-        # 文件不存在，调用 convert_pdf_to_images 函数进行转换
-        convert_pdf_to_images(pdf_file_path, os.path.join(target_path, md5_value))
-        # 创建 pdf-1-images.json 文件并写入当前时间
+        convert_pdf_to_images(pdf_file_path, base_target_dir)
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump({"timestamp": datetime.now().isoformat()}, json_file)
     else:
         print("文件 pdf-1-images.json 已存在，跳过操作。")
 
-    # Process images to json
+    # 2. Process images to json (OCR)
     json_file_path = os.path.join(json_backup_folder, "pdf-2-json.json")
     if not os.path.exists(json_file_path):
-        process_images_to_json(os.path.join(target_path,md5_value))
-        # 创建 pdf-2-json.json 文件并写入当前时间
+        process_images_to_json(base_target_dir)
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump({"timestamp": datetime.now().isoformat()}, json_file)
     else:
         print("文件 pdf-2-json.json 已存在，跳过操作。")
 
-    #判断标记文件--2026.03.23   
+    # 3. Extract text to json (PyMuPDF)
     json_file_path = os.path.join(json_backup_folder, "pdf-2-json-python.json")
     if not os.path.exists(json_file_path):
         extract_pdf_to_json(pdf_file_path, json_python_folder)
-        # 创建 pdf-2-json-python.json 文件并写入当前时间
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump({"timestamp": datetime.now().isoformat()}, json_file)
     else:
         print("文件 pdf-2-json-python.json 已存在，跳过操作。")
 
-    #判断标记文件--2026.03.23   
-    json_file_path = os.path.join(json_backup_folder, "pdf-2-json-py-to-ds.json")
+    # 4. 执行完美流水线：融合、合并、跨页、格式化
+    json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-ideal-pipeline.json")
     if not os.path.exists(json_file_path):
-        merge_py_json_to_ds_json(json_folder, json_python_folder, merged_output_folder)
-        # 创建 pdf-2-json-py-to-ds.json 文件并写入当前时间
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump({"timestamp": datetime.now().isoformat()}, json_file)
-    else:
-        print("文件 pdf-2-json-py-to-ds.json 已存在，跳过操作。")
-
-    #2026.03.25 在此环节添加：单页内不同区块的数据的连续合并，数据源：pdf-2-json-py-to-ds 目标文件夹：pdf-2-json-py-to-ds-curpage-merged
-    #merged_output_folder_curpage_merged
-    json_file_path = os.path.join(json_backup_folder, "pdf-2-json-py-to-ds-curpage-merged.json")
-    if not os.path.exists(json_file_path):
-        merge_py_json_to_ds_json_curpage(merged_output_folder,merged_output_folder_curpage_merged)
-        # 创建 pdf-2-json-py-to-ds-curpage-merged.json 文件并写入当前时间
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump({"timestamp": datetime.now().isoformat()}, json_file)
-    else:
-        print("文件 pdf-2-json-py-to-ds-curpage-merged.json 已存在，跳过操作。")
-    
-        
-    # Merge json files and create final processed file
-    json_file_path = os.path.join(json_backup_folder, "pdf-3-mk.json")
-    if not os.path.exists(json_file_path):
-        merge_json_to_mk(os.path.join(target_path,md5_value))
-        # 创建 pdf-3-mk.json 文件并写入当前时间
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump({"timestamp": datetime.now().isoformat()}, json_file)
-    else:
-        print("文件 pdf-3-mk.json 已存在，跳过操作。")
-
-    #2026.03.23新版本的json文件合并到markdown文件
-    json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-py-to-ds.json")
-    if not os.path.exists(json_file_path):
-        merge_json_to_mk_py_to_ds(os.path.join(target_path,md5_value))
-        # 创建 pdf-3-mk-py-to-ds.json 文件并写入当前时间
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump({"timestamp": datetime.now().isoformat()}, json_file)
-    else:
-        print("文件 pdf-3-mk-py-to-ds.json 已存在，跳过操作。")
-
-    #2026.03.25 将pdf2-json-py-to-ds-courrent-merged目录下的文件遍历读取，写入：processed_merged_nodes_three_py_to_ds_curpage-merged.json
-    #任务是否完成的标志文件名称是：pdf-3-mk-py-to-ds_curpage.json
-    
-    json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-py-to-ds_curpage.json")
-    if not os.path.exists(json_file_path):
-        merge_json_to_mk_py_to_ds_curpage(os.path.join(target_path,md5_value))
-        # 创建 pdf-3-mk-py-to-ds_curpage.json 文件并写入当前时间
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump({"timestamp": datetime.now().isoformat()}, json_file)
-    else:
-        print("文件 pdf-3-mk-py-to-ds_curpage.json 已存在，跳过操作。")
-
-    json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-py-to-ds_curpage-merged-format.json")
-    if not os.path.exists(json_file_path):
-        #2026.03.31-对结果数据中的“节点过度嵌套”进行结构优化 -begin
-        input_file=os.path.join(target_path,md5_value,"pdf-3-mk","processed_merged_nodes_three-py-to-ds-curpage-merged.json")
-        output_file=os.path.join(target_path,md5_value,"pdf-3-mk","processed_merged_nodes_three-py-to-ds-curpage-merged_format.json")
-        
-        # 调用新增加的格式化函数，将过度嵌套的 JSON 数据结构平铺，并统一转换坐标
-        merged_format_process_file(input_file, output_file)
+        output_file = ideal_pdf_to_markdown_pipeline(base_target_dir)
         
         # Backup existing process_data.json if it exists
         backup_json_file(json_backup_folder)
         # Copy the processed file to 1_Json folder
-        copy_processed_file(mk_folder, json_backup_folder)
+        target_process_data = os.path.join(json_backup_folder, "processed_data.json")
+        shutil.copy(output_file, target_process_data)
+        print(f"Processed file copied to {target_process_data}")
 
-        # 创建 pdf-3-mk-py-to-ds_curpage-merged-format.json 文件并写入当前时间
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump({"timestamp": datetime.now().isoformat()}, json_file)
     else:
-        print("文件 pdf-3-mk-py-to-ds_curpage-merged-format.json 已存在，跳过操作。")
+        print("文件 pdf-3-mk-ideal-pipeline.json 已存在，跳过操作。")
 
 
 def backup_json_file(json_backup_folder):
@@ -1191,13 +1126,6 @@ def backup_json_file(json_backup_folder):
         os.rename(process_data_path, backup_path)
         print(f"Backup of process_data.json created at {backup_path}")
 
-
-def copy_processed_file(mk_folder, json_backup_folder):
-    #processed_file = os.path.join(mk_folder, "processed_merged_nodes_three.json")
-    processed_file = os.path.join(mk_folder, "processed_merged_nodes_three-py-to-ds-curpage-merged_format.json")
-    target_path = os.path.join(json_backup_folder, "processed_data.json")
-    shutil.copy(processed_file, target_path)
-    print(f"Processed file copied to {target_path}")
 
 
 def Loop_Check_Pdf_toMarkdown():
