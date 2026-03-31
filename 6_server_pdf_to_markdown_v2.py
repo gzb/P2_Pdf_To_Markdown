@@ -1150,23 +1150,26 @@ def pdf_to_mk_main(pdf_file_path, target_path, md5_value):
         print("文件 pdf-3-mk-py-to-ds.json 已存在，跳过操作。")
 
     #2026.03.25 将pdf2-json-py-to-ds-courrent-merged目录下的文件遍历读取，写入：processed_merged_nodes_three_py_to_ds_curpage-merged.json
-    #任务是否完成的标志文件名称是：pdf-3-mk-py-to-ds.json
+    #任务是否完成的标志文件名称是：pdf-3-mk-py-to-ds_curpage.json
     
     json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-py-to-ds_curpage.json")
     if not os.path.exists(json_file_path):
         merge_json_to_mk_py_to_ds_curpage(os.path.join(target_path,md5_value))
-        # 创建 pdf-3-mk-py-to-ds.json 文件并写入当前时间
+        # 创建 pdf-3-mk-py-to-ds_curpage.json 文件并写入当前时间
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
             json.dump({"timestamp": datetime.now().isoformat()}, json_file)
     else:
-        print("文件 pdf-3-mk-py-to-ds.json 已存在，跳过操作。")
+        print("文件 pdf-3-mk-py-to-ds_curpage.json 已存在，跳过操作。")
 
     json_file_path = os.path.join(json_backup_folder, "pdf-3-mk-py-to-ds_curpage-merged-format.json")
     if not os.path.exists(json_file_path):
         #2026.03.31-对结果数据中的“节点过度嵌套”进行结构优化 -begin
         input_file=os.path.join(target_path,md5_value,"pdf-3-mk","processed_merged_nodes_three-py-to-ds-curpage-merged.json")
         output_file=os.path.join(target_path,md5_value,"pdf-3-mk","processed_merged_nodes_three-py-to-ds-curpage-merged_format.json")
-        merged_format_process_file(input_file,output_file)
+        
+        # 调用新增加的格式化函数，将过度嵌套的 JSON 数据结构平铺，并统一转换坐标
+        merged_format_process_file(input_file, output_file)
+        
         # Backup existing process_data.json if it exists
         backup_json_file(json_backup_folder)
         # Copy the processed file to 1_Json folder

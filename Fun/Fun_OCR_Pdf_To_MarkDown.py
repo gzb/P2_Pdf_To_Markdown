@@ -1425,7 +1425,7 @@ def merge_json_to_mk_py_to_ds_curpage(target_path):
     pages = []
 
     #pdf-2-json-py-to-ds-curpage-merged 中的json格式有所调整，添加了当前页面内的内容合并功能，需要通过-2026.03.31
-    pages=process_json_files_ds_to_py_curpage(folder)
+    pages = process_json_files_ds_to_py_curpage(folder)
 
     # 2.跨页合并
     paragraphs = merge_pages(pages)    
@@ -1434,25 +1434,26 @@ def merge_json_to_mk_py_to_ds_curpage(target_path):
     save_to_md(paragraphs, os.path.join(path_mk_dist, "output-py-to-ds-curpage-merged.md"))
     print(f"保存合并后的文本成功{os.path.join(path_mk_dist, 'output-py-to-ds-curpage-merged.md')}")
 
-    #5.保存合并结果到 JSON 文件
+    # 5.保存合并结果到 JSON 文件
     write_paragraphs_to_json(paragraphs, os.path.join(path_mk_dist, "processed_data_ocr-py-to-ds-curpage-merged.json"))
     print(f"保存合并后的段落成功{os.path.join(path_mk_dist, 'processed_data_ocr-py-to-ds-curpage-merged.json')}")
 
-    # 将pages中的nodes的内容读取出来到merged_nodes
+    # 将 pages 中的 nodes 的内容读取出来到 merged_nodes
     merged_nodes = merge_nodes(pages)
 
-    # 将合并后的节点写入 JSON 文件（此时的pages中的"node_index""text_len""box"，已经有了多个数组的情况）
+    # 将合并后的节点写入 JSON 文件
     save_nodes_to_json(merged_nodes, os.path.join(path_mk_dist, 'processed_data_nodes-py-to-ds-curpage-merged.json'))
  
-    # 合并后的节点记录（通过 should_merge 判断）
+    # 合并后的节点记录（通过 should_merge 判断跨页合并）
     merged_result = merge_nodes_two(merged_nodes)
 
     # 将合并后的节点写入 JSON 文件
-    save_merged_nodes_to_json(merged_result, os.path.join(path_mk_dist,'processed_merged_nodes-py-to-ds-curpage-merged.json'))
+    save_merged_nodes_to_json(merged_result, os.path.join(path_mk_dist, 'processed_merged_nodes-py-to-ds-curpage-merged.json'))
 
-    #合并节点（主要是合并节点，让content的值尽量长约1024个长度）
-    merged_output=merge_nodes_three(merged_result)
-    save_merged_nodes_to_json_three(merged_output, os.path.join(path_mk_dist,'processed_merged_nodes_three-py-to-ds-curpage-merged.json'))   
+    # 合并节点（主要是合并节点，让 content 的值尽量长约 1024 个长度）
+    merged_output = merge_nodes_three(merged_result)
+    save_merged_nodes_to_json_three(merged_output, os.path.join(path_mk_dist, 'processed_merged_nodes_three-py-to-ds-curpage-merged.json'))   
+
 
 '''
 2026.03.25

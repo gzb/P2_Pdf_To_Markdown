@@ -1,0 +1,20 @@
+请先理解：6_server_pdf_to_markdown_v2.py
+和fun\Fun_OCR_Pdf_To_MarkDown.py 的代码。
+目前代码的函数功能说明和调用，以及函数的名称不是很规范，调试起来比较麻烦。
+请根据理解，优化代码。
+
+
+---
+2026.03.31
+
+请根据对6_server_pdf_to_markdown_v2.py和fun\Fun_OCR_Pdf_To_MarkDown.py功能函数的理解
+整理出来一个比较理想的代码：
+整体思路是：
+参照：函数def pdf_to_mk_main(pdf_file_path, target_path, md5_value) 的数据处理流程
+1. pdf 转换为图片存放到图片目录下面(pdf-1-images)目录下
+2. 遍历图片，进行ocr识别，将ocr识别的结果放到(pdf-2-json)目录下
+3. 使用函数：extract_pdf_to_json 将分页识别为json格式的文件，存放到(pdf-2-json-python)目录下.
+4. 因为 ocr识别出来的文件布局是完美的，但存在识别错误的字; 而extract_pdf_to_json函数识别出来的json文件，存在文字不连续的问题，所以就编写了
+函数保留ds的排版格式，吸取pymupdf的正确数据的函数：def merge_text(deepseek_ocr_text: str, box_text: str) 整个函数处理过的数据存放在了“pdf-2-json-py-to-ds”目录下面。
+
+5.
