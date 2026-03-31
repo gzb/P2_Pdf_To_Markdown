@@ -39,3 +39,15 @@
 读取：C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\1_Json\processed_data_ok.json
 文件
 遍历："content"节点，读取里面的内容，将#，空格替换后，统计总的字数。将结果写入文件总字数文件中。
+
+
+==
+请编写单独页面代码：
+遍历：C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\2_Check_H目录下面的所有json文件
+遍历文件的时候，使用文件名称1-n的顺序读取。
+
+1. 读取每个文件中的："id" ,"errors"节点里面的"content"的内容，以及"content"平级的"rightSentences"的内容。
+2. 遍历完毕上面内容后，生成一个html页面。
+
+页面以id为顺序。每个部分展示：id，"content"，以及"content"平级的"rightSentences"的内容，界面给美化一下。
+最后统计输出总的content的数量，以总的content的字数。
