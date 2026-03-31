@@ -28,22 +28,55 @@ def process_file(input_path, output_path):
         data = json.load(f)
         
     for item in data:
+        # 首先提取当前 item 第一组的 image_dims 用于坐标转换（假设整页的宽高相同）
+        page_w, page_h = 1000, 1000
+        if "image_dims" in item and len(item["image_dims"]) > 0:
+            first_dim = item["image_dims"][0]
+            # 如果 first_dim 还是嵌套的列表，取第一个元素
+            if isinstance(first_dim, list) and len(first_dim) > 0:
+                dim_dict = first_dim[0]
+            else:
+                dim_dict = first_dim
+                
+            if isinstance(dim_dict, dict):
+                page_w = dim_dict.get("w", 1000)
+                page_h = dim_dict.get("h", 1000)
+                
+        scale_x = 1000.0 / page_w if page_w else 1.0
+        scale_y = 1000.0 / page_h if page_h else 1.0
+
         # 处理 boxs
         if "boxs" in item:
             new_boxs = []
             for group in item["boxs"]:
-                # group 本应该是一个包含多个 box(列表) 的列表
-                # 如果 group 里面还有多余的嵌套，比如 group[0] 是一个包含了多个 box 的列表
-                # 例如：[[[x,y,x,y], [x,y,x,y]]] 
-                # 正常情况应该是：[[x,y,x,y], [x,y,x,y]]
                 flattened_group = []
                 for sub_item in group:
                     # 如果 sub_item 的第一个元素是一个列表，说明多了一层嵌套
                     if isinstance(sub_item, list) and len(sub_item) > 0 and isinstance(sub_item[0], list):
-                        # 把里面那一层的元素加到 flattened_group 中
-                        flattened_group.extend(sub_item)
+                        # 把里面那一层的元素加到 flattened_group 中，并转换坐标
+                        for box in sub_item:
+                            if len(box) == 4:
+                                scaled_box = [
+                                    int(round(box[0] * scale_x)),
+                                    int(round(box[1] * scale_y)),
+                                    int(round(box[2] * scale_x)),
+                                    int(round(box[3] * scale_y))
+                                ]
+                                flattened_group.append(scaled_box)
+                            else:
+                                flattened_group.append(box)
                     else:
-                        flattened_group.append(sub_item)
+                        # 当前 sub_item 就是一个 box [x1, y1, x2, y2]
+                        if len(sub_item) == 4 and isinstance(sub_item[0], (int, float)):
+                            scaled_box = [
+                                int(round(sub_item[0] * scale_x)),
+                                int(round(sub_item[1] * scale_y)),
+                                int(round(sub_item[2] * scale_x)),
+                                int(round(sub_item[3] * scale_y))
+                            ]
+                            flattened_group.append(scaled_box)
+                        else:
+                            flattened_group.append(sub_item)
                 new_boxs.append(flattened_group)
             item["boxs"] = new_boxs
             
