@@ -266,6 +266,95 @@ def get_effective_last_char(text):
         last_char = text[-2]
     return last_char
 
+def normalize_block_text(label, text):
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if label == "title":
+        return f"# {text}"
+    if label == "sub_title":
+        return f"## {text}"
+    return text
+
+def merge_final_output_by_content_limit(formatted_output, max_content_len=1024):
+    merged_output = []
+    current_item = None
+
+    for item in formatted_output:
+        content = item.get("content", "")
+
+        if "<table>" in content:
+            if current_item is not None:
+                merged_output.append(current_item)
+                current_item = None
+            merged_output.append(item)
+            continue
+
+        if content.startswith("#"):
+            if current_item is not None:
+                merged_output.append(current_item)
+            current_item = {
+                "content": content,
+                "texts": list(item.get("texts", [])),
+                "page": item.get("page", "1"),
+                "pages": list(item.get("pages", [])),
+                "nodes_text_len": list(item.get("nodes_text_len", [])),
+                "nodes_index": list(item.get("nodes_index", [])),
+                "boxs": list(item.get("boxs", [])),
+                "image_dims": list(item.get("image_dims", [])),
+                "ref": list(item.get("ref", []))
+            }
+            continue
+
+        if current_item is None:
+            current_item = {
+                "content": content,
+                "texts": list(item.get("texts", [])),
+                "page": item.get("page", "1"),
+                "pages": list(item.get("pages", [])),
+                "nodes_text_len": list(item.get("nodes_text_len", [])),
+                "nodes_index": list(item.get("nodes_index", [])),
+                "boxs": list(item.get("boxs", [])),
+                "image_dims": list(item.get("image_dims", [])),
+                "ref": list(item.get("ref", []))
+            }
+            continue
+
+        merged_content = f"{current_item['content']}\n{content}" if current_item["content"] else content
+        if len(merged_content) <= max_content_len:
+            current_item["content"] = merged_content
+            current_item["texts"].extend(item.get("texts", []))
+            current_item["pages"].extend(item.get("pages", []))
+            current_item["nodes_text_len"].extend(item.get("nodes_text_len", []))
+            current_item["nodes_index"].extend(item.get("nodes_index", []))
+            current_item["boxs"].extend(item.get("boxs", []))
+            current_item["image_dims"].extend(item.get("image_dims", []))
+            current_item["ref"].extend(item.get("ref", []))
+        else:
+            merged_output.append(current_item)
+            current_item = {
+                "content": content,
+                "texts": list(item.get("texts", [])),
+                "page": item.get("page", "1"),
+                "pages": list(item.get("pages", [])),
+                "nodes_text_len": list(item.get("nodes_text_len", [])),
+                "nodes_index": list(item.get("nodes_index", [])),
+                "boxs": list(item.get("boxs", [])),
+                "image_dims": list(item.get("image_dims", [])),
+                "ref": list(item.get("ref", []))
+            }
+
+    if current_item is not None:
+        merged_output.append(current_item)
+
+    for idx, item in enumerate(merged_output, start=1):
+        item["id"] = idx
+        item["type"] = "text"
+        first_group = item.get("nodes_index", [])
+        item["number"] = first_group[0][0] if first_group and first_group[0] else None
+
+    return merged_output
+
 def step4_merge_ocr_and_py_json(ocr_data, py_data):
     """
     将 py_data 中的准确文字填入 ocr_data 的完美排版中。
@@ -282,7 +371,7 @@ def step4_merge_ocr_and_py_json(ocr_data, py_data):
         p["ds_bbox"] = [b[0]*scale_x, b[1]*scale_y, b[2]*scale_x, b[3]*scale_y]
         
     for block in ocr_data.get("boxes", []):
-        if block.get("label") not in ["text", "sub_title"]:
+        if block.get("label") not in ["text", "sub_title", "title"]:
             continue
         bbox = block.get("box")
         if not bbox: continue
@@ -312,13 +401,12 @@ def step5_inpage_paragraph_merge(page_data, page_num):
     pending_node = None
     separated_by_non_text = False
     
-    for block in page_data.get("boxes", []):
+    for block_index, block in enumerate(page_data.get("boxes", [])):
         label = block.get("label", "")
-        text_content = block.get("text_content", "").strip()
+        text_content = normalize_block_text(label, block.get("text_content", ""))
         original_box = block.get("box", [])
         
-        if label not in ["text", "sub_title"]:
-            # 非文本块直接作为独立节点，初始化扁平结构
+        if label not in ["text", "sub_title", "title"]:
             merged_nodes.append({
                 "label": label,
                 "text_content": text_content,
@@ -326,7 +414,8 @@ def step5_inpage_paragraph_merge(page_data, page_num):
                 "ref": [label],
                 "boxs": [original_box] if original_box else [],
                 "pages": [str(page_num)],
-                "nodes_text_len": [0],
+                "nodes_text_len": [len(text_content)] if text_content else [0],
+                "nodes_index": [block_index],
                 "image_dims": [page_data.get("image_dims", {})]
             })
             separated_by_non_text = True
@@ -343,6 +432,7 @@ def step5_inpage_paragraph_merge(page_data, page_num):
             "boxs": [original_box],
             "pages": [str(page_num)],
             "nodes_text_len": [len(text_content)],
+            "nodes_index": [block_index],
             "image_dims": [page_data.get("image_dims", {})]
         }
             
@@ -360,7 +450,12 @@ def step5_inpage_paragraph_merge(page_data, page_num):
             is_cross_column = abs(cb[0] - nb[0]) > page_width * 0.05
             is_bottom_of_page = cb[3] > page_height * 0.85
             
-            if is_cut_off and (is_cross_column or is_bottom_of_page or separated_by_non_text):
+            if (
+                pending_node["label"] == "text"
+                and current_node["label"] == "text"
+                and is_cut_off
+                and (is_cross_column or is_bottom_of_page or separated_by_non_text)
+            ):
                 # 扁平化合并：直接 extend 数组，不产生嵌套
                 pending_node["text_content"] += "\n" + current_node["text_content"]
                 pending_node["texts"].extend(current_node["texts"])
@@ -368,6 +463,7 @@ def step5_inpage_paragraph_merge(page_data, page_num):
                 pending_node["boxs"].extend(current_node["boxs"])
                 pending_node["pages"].extend(current_node["pages"])
                 pending_node["nodes_text_len"].extend(current_node["nodes_text_len"])
+                pending_node["nodes_index"].extend(current_node["nodes_index"])
                 pending_node["image_dims"].extend(current_node["image_dims"])
                 separated_by_non_text = False
             else:
@@ -385,7 +481,7 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
     pending_node = None
     
     for node in all_pages_nodes:
-        if node["label"] not in ["text", "sub_title"]:
+        if node["label"] not in ["text", "sub_title", "title"]:
             final_nodes.append(node)
             continue
             
@@ -396,7 +492,7 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
             last_char = get_effective_last_char(pending_node["text_content"])
             is_cut_off = last_char and not is_terminal_punctuation(last_char)
             
-            if is_cut_off:
+            if pending_node["label"] == "text" and node["label"] == "text" and is_cut_off:
                 # 跨页合并，依然使用 extend 保持扁平化
                 pending_node["text_content"] += "\n" + node["text_content"]
                 pending_node["texts"].extend(node["texts"])
@@ -404,6 +500,7 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
                 pending_node["boxs"].extend(node["boxs"])
                 pending_node["pages"].extend(node["pages"])
                 pending_node["nodes_text_len"].extend(node["nodes_text_len"])
+                pending_node["nodes_index"].extend(node["nodes_index"])
                 pending_node["image_dims"].extend(node["image_dims"])
             else:
                 pending_node = node
@@ -431,19 +528,21 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
                 scaled_boxs.append(box)
                 
         formatted_output.append({
-            "id": idx + 1,
-            "type": node["label"],
             "content": node["text_content"],
             "texts": node.get("texts", []),
-            "ref": node.get("ref", []),
             "page": node["pages"][0] if node["pages"] else "1",
-            "pages": [node["pages"]],              # 配合原有结构套一层
-            "nodes_text_len": [node["nodes_text_len"]], 
-            "boxs": [scaled_boxs],                 # 此时 scaled_boxs 已经是干净的 [[x,y,x,y], [x,y,x,y]]
-            "image_dims": [node["image_dims"]]     # 恢复原始宽高的保留，不强制写死1024
+            "pages": [node["pages"]],
+            "nodes_text_len": [node["nodes_text_len"]],
+            "nodes_index": [node.get("nodes_index", [])],
+            "boxs": [scaled_boxs],
+            "image_dims": [node["image_dims"]],
+            "ref": node.get("ref", []),
+            "id": idx + 1,
+            "type": "text",
+            "number": node.get("nodes_index", [None])[0] if node.get("nodes_index") else None
         })
         
-    return formatted_output
+    return merge_final_output_by_content_limit(formatted_output, max_content_len=1024)
 
 def ideal_pdf_to_markdown_pipeline(target_dir):
     """
