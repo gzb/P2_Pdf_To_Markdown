@@ -267,8 +267,9 @@ def get_effective_last_char(text):
     return last_char
 
 def normalize_block_text(label, text):
-    text = (text or "").strip()
-    if not text:
+    text = text or ""
+    # 注意：这里不能用 .strip() 否则会把段落前后的排版空格（用于缩进/分割的）直接干掉
+    if not text.strip():
         return ""
     if label == "title":
         return f"# {text}"
@@ -403,14 +404,17 @@ def step5_inpage_paragraph_merge(page_data, page_num):
     
     for block_index, block in enumerate(page_data.get("boxes", [])):
         label = block.get("label", "")
-        text_content = normalize_block_text(label, block.get("text_content", ""))
+        # 原有的原始文本保留其排版空格（不使用 strip）
+        original_text = block.get("text_content", "")
+        text_content = normalize_block_text(label, original_text)
         original_box = block.get("box", [])
         
         if label not in ["text", "sub_title", "title"]:
             merged_nodes.append({
                 "label": label,
                 "text_content": text_content,
-                "texts": [text_content] if text_content else [],
+                # texts 中直接保存原原本本的数据（保留空格），而 content 负责拼装带 \n 的
+                "texts": [original_text] if original_text else [],
                 "ref": [label],
                 "boxs": [original_box] if original_box else [],
                 "pages": [str(page_num)],
@@ -427,7 +431,7 @@ def step5_inpage_paragraph_merge(page_data, page_num):
         current_node = {
             "label": label,
             "text_content": text_content,
-            "texts": [text_content],
+            "texts": [original_text],
             "ref": [label],
             "boxs": [original_box],
             "pages": [str(page_num)],
