@@ -1,0 +1,62 @@
+请编写单独的python程序文件：
+1. 读取 C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\processed_merged_nodes_three-py-to-ds-curpage-merged.json
+2.processed_merged_nodes_three-py-to-ds-curpage-merged.json文件中存在："boxs"、"image_dims" 、"nodes_text_len"、"nodes_index" 节点，
+这些节点，正常的数据存放格式如下：
+
+例如：
+
+"boxs": [
+            [
+                [
+                    0,
+                    561,
+                    1202,
+                    1650
+                ],
+                [
+                    125,
+                    264,
+                    434,
+                    578
+                ]
+            ],[
+                [
+                    125,
+                    586,
+                    431,
+                    832
+                ]
+            ],
+            [
+                [
+                    125,
+                    840,
+                    431,
+                    1048
+                ]
+            ]
+         ]
+
+先在数据结构中出现了下面的又多一层的结构：
+
+[
+                [
+                    [
+                        128,
+                        1379,
+                        431,
+                        1517
+                    ],
+                    [
+                        451,
+                        264,
+                        757,
+                        330
+                    ]
+                ]
+            ]
+]
+
+希望将多一层的结构去掉，整个数据的存储向上提一个级别。
+
+修改后，将结果存入下面文件 C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\processed_merged_nodes_three-py-to-ds-curpage-merged_format.json

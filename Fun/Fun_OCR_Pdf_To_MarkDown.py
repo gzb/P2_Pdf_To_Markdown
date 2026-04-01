@@ -372,21 +372,73 @@ def step4_merge_ocr_and_py_json(ocr_data, py_data):
         p["ds_bbox"] = [b[0]*scale_x, b[1]*scale_y, b[2]*scale_x, b[3]*scale_y]
         
     for block in ocr_data.get("boxes", []):
-        if block.get("label") not in ["text", "sub_title", "title"]:
+        label = block.get("label")
+        
+        # 始终确保哪怕是不匹配的区块（例如 image、table），也有一个基本的 text_content 容错
+        ocr_text = block.get("text_content", "")
+        
+        if label not in ["text", "sub_title", "title"]:
+            # 如果是非文本块，但之前没识别出 text_content，尝试从 raw_text 解析找回
+            if not ocr_text:
+                bbox = block.get("box")
+                if bbox:
+                    raw_text = ocr_data.get("raw_text", "")
+                    if raw_text:
+                        det_str = f"<|det|>[[{bbox[0]}, {bbox[1]}, {bbox[2]}, {bbox[3]}]]<|/det|>"
+                        start_idx = raw_text.find(det_str)
+                        if start_idx != -1:
+                            start_idx += len(det_str)
+                            if start_idx < len(raw_text) and raw_text[start_idx] == '\n':
+                                start_idx += 1
+                            end_idx = raw_text.find("<|ref|>", start_idx)
+                            if end_idx == -1:
+                                extracted_text = raw_text[start_idx:]
+                            else:
+                                extracted_text = raw_text[start_idx:end_idx]
+                            if extracted_text.endswith('\n'):
+                                extracted_text = extracted_text[:-1]
+                            block["text_content"] = extracted_text
             continue
+            
         bbox = block.get("box")
         if not bbox: continue
         
+        # 修正 a: 如果 pdf-2json 的数据中存在 table，目标文件中的 text 数据使用 ocr 的数据。
+        if "<table>" in ocr_text:
+            # 跳过合并，直接保留原始 ocr 的文本（包含 HTML 结构）
+            continue
+            
         target_box = [bbox[0]-5, bbox[1]-5, bbox[2]+5, bbox[3]+5]
         matches = [p for p in py_blocks if is_contained_or_overlap(p["ds_bbox"], target_box)]
         
         combined_py_text = "".join([m.get("text", "") for m in matches])
         
-        ocr_text = block.get("text_content", "")
-        # 融合两者优点
+        # 修正 b: 如果 pdf-2-json-python 区块没有内容但 ocr 的有内容，则使用 ocr 的 (这部分已有逻辑满足：if combined_py_text才覆盖)
         if combined_py_text:
             merged_text = merge_text(ocr_text, combined_py_text)
             block["text_content"] = merged_text
+        else:
+            # 当 combined_py_text 为空时，尝试从 raw_text 中回退提取最原始带所有排版的 OCR 数据
+            if not ocr_text:
+                raw_text = ocr_data.get("raw_text", "")
+                if raw_text:
+                    det_str = f"<|det|>[[{bbox[0]}, {bbox[1]}, {bbox[2]}, {bbox[3]}]]<|/det|>"
+                    start_idx = raw_text.find(det_str)
+                    if start_idx != -1:
+                        start_idx += len(det_str)
+                        if start_idx < len(raw_text) and raw_text[start_idx] == '\n':
+                            start_idx += 1
+                        
+                        end_idx = raw_text.find("<|ref|>", start_idx)
+                        if end_idx == -1:
+                            extracted_text = raw_text[start_idx:]
+                        else:
+                            extracted_text = raw_text[start_idx:end_idx]
+                            
+                        if extracted_text.endswith('\n'):
+                            extracted_text = extracted_text[:-1]
+                            
+                        block["text_content"] = extracted_text
         
     return ocr_data
 
@@ -551,10 +603,18 @@ def step6_crosspage_merge_and_format(all_pages_nodes):
 def ideal_pdf_to_markdown_pipeline(target_dir):
     """
     理想状态下的 PDF 转 Markdown 全流程调度。
+    增加对中间处理结果 (pdf-2-json-py-to-ds, pdf-2-json-py-to-ds-curpage-merged) 的留存。
     """
     ocr_json_dir = os.path.join(target_dir, "pdf-2-json")
     py_json_dir = os.path.join(target_dir, "pdf-2-json-python")
+    
+    # 新增或恢复的中间目录
+    py_to_ds_dir = os.path.join(target_dir, "pdf-2-json-py-to-ds")
+    curpage_merged_dir = os.path.join(target_dir, "pdf-2-json-py-to-ds-curpage-merged")
     mk_folder = os.path.join(target_dir, "pdf-3-mk")
+    
+    os.makedirs(py_to_ds_dir, exist_ok=True)
+    os.makedirs(curpage_merged_dir, exist_ok=True)
     os.makedirs(mk_folder, exist_ok=True)
     
     all_pages_nodes = []
@@ -582,14 +642,22 @@ def ideal_pdf_to_markdown_pipeline(target_dir):
         else:
             py_data = {"blocks": []}
             
-        # 步骤 4：融合 OCR 与 PyMuPDF
+        # 步骤 3/4：融合 OCR 与 PyMuPDF (保存到 pdf-2-json-py-to-ds)
         merged_data = step4_merge_ocr_and_py_json(ocr_data, py_data)
+        with open(os.path.join(py_to_ds_dir, filename), 'w', encoding='utf-8') as f:
+            json.dump(merged_data, f, ensure_ascii=False, indent=4)
         
-        # 步骤 5：页内段落合并 (生成无嵌套的扁平节点)
+        # 步骤 4/5：页内段落合并 (生成无嵌套的扁平节点)
         page_nodes = step5_inpage_paragraph_merge(merged_data, page_num)
+        
+        # 为了兼容旧流程查看，把单页合并后的节点也伪装成完整结构存一份到 curpage_merged_dir
+        with open(os.path.join(curpage_merged_dir, filename), 'w', encoding='utf-8') as f:
+            # 这里简单包装成 {"boxes": page_nodes} 形式，方便查看
+            json.dump({"boxes": page_nodes, "image_dims": merged_data.get("image_dims", {})}, f, ensure_ascii=False, indent=4)
+            
         all_pages_nodes.extend(page_nodes)
         
-    # 步骤 6 & 7：跨页合并与坐标转换
+    # 步骤 5/6 & 7：跨页合并与坐标转换
     final_json_data = step6_crosspage_merge_and_format(all_pages_nodes)
     
     # 保存最终结果
