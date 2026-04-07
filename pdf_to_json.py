@@ -49,6 +49,10 @@ def extract_pdf_to_json(pdf_path, output_dir, images_dir):
                 # 判断整个block是否包含中文，作为上下文辅助判断
                 block_has_chinese = any('\u4e00' <= c <= '\u9fff' for l in lines for s in l.get("spans", []) for c in s.get("text", ""))
                 
+                # 用一个集合记录已添加行的签名，用于去重
+                # 签名格式可以是 (行文本, 约舍后的y坐标)
+                seen_lines = set()
+                
                 for line in lines:
                     line_text = ""
                     spans = line.get("spans", [])
@@ -102,7 +106,15 @@ def extract_pdf_to_json(pdf_path, output_dir, images_dir):
 
                         line_text += text
                         
-                    block_text += line_text + "\n"
+                    # 去重逻辑：
+                    # 一些 PDF 编辑软件（尤其是加粗或文字阴影效果）会在几乎同样的坐标下写两遍甚至多遍相同的文字
+                    # 我们通过判断该行文字与该行的纵坐标（允许大约1~2像素误差，这里除以2然后取整相当于2像素网格）是否已存在
+                    y_approx = int(line_bbox[1] / 2)
+                    line_signature = (line_text.strip(), y_approx)
+                    
+                    if line_signature not in seen_lines:
+                        seen_lines.add(line_signature)
+                        block_text += line_text + "\n"
                     
                 block_text = block_text.strip()
                 if block_text:
