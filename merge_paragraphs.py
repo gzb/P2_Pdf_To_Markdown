@@ -46,6 +46,31 @@ def merge_paragraph_blocks(json_data):
                 # 忽略空文本块
                 continue
                 
+            # 处理目录页码：如果文本中包含 "……" 等紧跟数字，在数字后添加换行
+            # 这里的 \u2026 是 …，支持半角圆点和各种组合
+            # 匹配连续的标点（至少2个），可选空格，以及随后的数字。将整个匹配项替换为它本身加一个换行符。
+            # 这里不用 \n 替换 \1\n 是因为后续的正则也会遇到这个，我们干脆只要匹配到数字和下一个章节标识符就连起来处理
+            text_content = re.sub(r'([\.。…\u2026]{2,}[\s\u3000]*\d+)(?![\n\r])', r'\1\n', text_content)
+            
+            # 针对没有省略号或点的数字（通常被上面错漏），如果数字后有空格紧跟下一个章节名称，断开
+            text_content = re.sub(r'(\d+)\s+(?=[第#])', r'\1\n', text_content)
+            
+            # 如果数字和接下来的章节名称完全粘连（如 99第三节 或者 110第二节）
+            text_content = re.sub(r'(\d+)(第[一二三四五六七八九十百千万]+[章节篇部分条款])', r'\1\n\2', text_content)
+            
+            # 处理没有被点匹配到，但是是空格+数字+汉字 的情况，比如 " 110" 粘连到下一段的开头汉字
+            text_content = re.sub(r'(\d+)(?=[第#])', r'\1\n', text_content)
+            
+            # 为了确保原本就有换行的地方不被重复添加换行，我们可以替换掉多余的换行
+            text_content = text_content.replace('\n\n', '\n')
+            
+            # 在追加内容时，如果前一段是用 \n 结尾的，就不需要判断 is_cut_off
+            # 如果结尾是换行，说明明确要求断行，这里就不算 cut_off，直接不合并
+            force_break = text_content.endswith('\n')
+            
+            # 将处理后的文本更新回 block，以便在后续处理或存入 merged_boxes 时带有这些修改
+            block["text_content"] = text_content
+            
             if pending_text_block is None:
                 # 初始化新的待合并文本块
                 pending_text_block = block.copy()
@@ -59,8 +84,8 @@ def merge_paragraph_blocks(json_data):
                 nb = block.get("box", [0, 0, 0, 0])
                 
                 # 触发合并的条件：
-                # 1. 前一个区块不是以句号等结束符结尾
-                is_cut_off = last_char and not is_terminal_punctuation(last_char)
+                # 1. 前一个区块不是以句号等结束符结尾，并且没有强制断行标记
+                is_cut_off = last_char and not is_terminal_punctuation(last_char) and not pending_text_block.get("text_content", "").endswith('\n')
                 
                 # 2. 前一个区块不能是典型的章节标题（否则它可能会错误地跟下一段合并）
                 is_not_title = not is_title_format(pending_text_block.get("text_content", ""))
