@@ -106,6 +106,15 @@ def extract_pdf_to_json(pdf_path, output_dir, images_dir):
 
                         line_text += text
                         
+                    # 1. 替换 "\u0007" 等特殊字符为空
+                    line_text = line_text.replace('\u0007', '')
+                    
+                    # 2. 如果整行文本是 “……” + “ ” + “数字” (通常是目录的页码)，在其后添加 \r\n
+                    import re
+                    # 匹配任意数量的省略号（中英文点号）、空格，以及最后的数字
+                    if re.match(r'^[\.。…\s]+\d+$', line_text.strip()):
+                        line_text += "\r\n"
+                        
                     # 去重逻辑：
                     # 一些 PDF 编辑软件（尤其是加粗或文字阴影效果）会在几乎同样的坐标下写两遍甚至多遍相同的文字
                     # 我们通过判断该行文字与该行的纵坐标（允许大约1~2像素误差，这里除以2然后取整相当于2像素网格）是否已存在
