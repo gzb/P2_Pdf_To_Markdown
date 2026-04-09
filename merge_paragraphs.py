@@ -62,7 +62,13 @@ def merge_paragraph_blocks(json_data):
                 # 1. 前一个区块不是以句号等结束符结尾
                 is_cut_off = last_char and not is_terminal_punctuation(last_char)
                 
-                # 2. 并且满足以下布局特征之一：
+                # 2. 前一个区块不能是典型的章节标题（否则它可能会错误地跟下一段合并）
+                is_not_title = not is_title_format(pending_text_block.get("text_content", ""))
+                
+                # 2.5 当前区块也不能是典型的章节标题（否则它就是新起的一段，不应追加到前一段）
+                current_is_not_title = not is_title_format(text_content)
+                
+                # 3. 并且满足以下布局特征之一：
                 #   a. 跨栏：两者的 X 坐标差异较大
                 is_cross_column = abs(cb[0] - nb[0]) > page_width * 0.05
                 #   b. 跨页底：前一个区块已经接近页面底部
@@ -70,7 +76,7 @@ def merge_paragraph_blocks(json_data):
                 #   c. 被非文本区块（如图片、表格）物理截断
                 is_separated = separated_by_non_text
                 
-                if is_cut_off and (is_cross_column or is_bottom_of_page or is_separated):
+                if is_cut_off and is_not_title and current_is_not_title and (is_cross_column or is_bottom_of_page or is_separated):
                     # 执行合并
                     # 记录被合并区块的原始文本长度
                     original_len = len(pending_text_block["text_content"])
@@ -126,8 +132,8 @@ def process_file(input_path, output_path):
     print("Done!")
 
 if __name__ == "__main__":
-    input_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\8.json"
-    output_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\8_merged.json"
+    input_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\12.json"
+    output_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\12_merged.json"
     
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     process_file(input_file, output_file)

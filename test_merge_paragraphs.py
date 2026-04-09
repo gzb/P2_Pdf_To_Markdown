@@ -102,6 +102,9 @@ def merge_paragraph_blocks(json_data, input_filename):
                 # 2. 前一个区块不能是典型的章节标题（否则它可能会错误地跟下一段合并）
                 is_not_title = not is_title_format(pending_text_block.get("text_content", ""))
                 
+                # 2.5 当前区块也不能是典型的章节标题（否则它就是新起的一段，不应追加到前一段）
+                current_is_not_title = not is_title_format(text_content)
+                
                 # 3. 并且满足以下布局特征之一：
                 #   a. 跨栏：两者的 X 坐标差异较大
                 is_cross_column = abs(cb[0] - nb[0]) > page_width * 0.05
@@ -110,7 +113,7 @@ def merge_paragraph_blocks(json_data, input_filename):
                 #   c. 被非文本区块（如图片、表格）物理截断
                 is_separated = separated_by_non_text
                 
-                if is_cut_off and is_not_title and (is_cross_column or is_bottom_of_page or is_separated):
+                if is_cut_off and is_not_title and current_is_not_title and (is_cross_column or is_bottom_of_page or is_separated):
                     # 执行合并
                     # 记录被合并区块的原始文本长度 (修正了这里原本用 pending_text_block["text_content"] 而非原始文字长度的问题)
                     original_len = len(pending_text_block.get("text_content", ""))
@@ -143,9 +146,14 @@ def merge_paragraph_blocks(json_data, input_filename):
                     separated_by_non_text = False
                     
         else:
-            # 非文本区块（如 image, table, equation 等）
+            # 非文本区块（如 image, table, equation 等，以及 title）
             merged_boxes.append(block.copy())
-            separated_by_non_text = True
+            if label == "title":
+                # 遇到标题，前面的段落肯定结束了
+                pending_text_block = None
+                separated_by_non_text = False
+            else:
+                separated_by_non_text = True
             
     # 构建新的 JSON 数据
     new_json_data = json_data.copy()
@@ -177,7 +185,10 @@ def merge_py_json_to_ds_json_curpage_process_file(input_filename, output_filenam
 
 if __name__ == "__main__":
     # 指定的测试输入和输出路径
-    input_file = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\87c0c8816de13122fc58fcc878b9e22f\pdf-2-json-py-to-ds-b\9.json"
-    output_file = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\87c0c8816de13122fc58fcc878b9e22f\pdf-2-json-py-to-ds-b\9_n.json"
+    #input_file = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\87c0c8816de13122fc58fcc878b9e22f\pdf-2-json-py-to-ds-b\9.json"
+    #output_file = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\87c0c8816de13122fc58fcc878b9e22f\pdf-2-json-py-to-ds-b\9_n.json"
     
+    input_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\12.json"
+    output_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\12_merged.json"
+  
     merge_py_json_to_ds_json_curpage_process_file(input_file, output_file)
