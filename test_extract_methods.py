@@ -1,6 +1,8 @@
 import re
 import json
 import requests
+from datetime import datetime
+import os
 
 # ==========================================================
 # 方案1：基于规则（正则表达式）提取“习近平”讲过的语句
@@ -166,6 +168,44 @@ def extract_quotes_by_llm(text, ollama_url="http://192.168.0.19:11435/api/chat",
 
 
 # ==========================================================
+# 辅助函数：保存规则提取结果到指定格式的 JSON 文件
+# ==========================================================
+def save_rule_results_to_json(rule_results, out_file_json):
+    """
+    将提取的 rule_results 按指定的 JSON 结构包装并写入文件。
+    模拟了类似 LLM API 返回的数据结构。
+    """
+    # 将字典对象转换为 JSON 字符串，作为 content 的值
+    content_str = json.dumps(rule_results, ensure_ascii=False)
+    
+    current_time = datetime.now().isoformat() + "Z"
+    
+    wrapper_data = {
+        "model": "reg",
+        "created_at": current_time,
+        "message": {
+            "role": "reg",
+            "content": content_str
+        },
+        "done": True,
+        "done_reason": "stop",
+        "total_duration": 0,
+        "load_duration": 0,
+        "prompt_eval_count": 0,
+        "prompt_eval_duration": 0,
+        "eval_count": 0,
+        "eval_duration": 0
+    }
+    
+    # 确保目录存在
+    os.makedirs(os.path.dirname(os.path.abspath(out_file_json)), exist_ok=True)
+    
+    with open(out_file_json, 'w', encoding='utf-8') as f:
+        json.dump(wrapper_data, f, ensure_ascii=False, indent=4)
+        
+    print(f"提取结果已成功包装并保存至: {out_file_json}")
+
+# ==========================================================
 # 测试与调用示例
 # ==========================================================
 if __name__ == "__main__":
@@ -184,6 +224,11 @@ if __name__ == "__main__":
     print("\n【方案1：基于规则（正则表达式）的提取结果】")
     rule_results = extract_quotes_by_rule(sample_text)
     print(json.dumps(rule_results, ensure_ascii=False, indent=4))
+    
+    # 3. 将方案1的结果写入文件
+    out_file = r"c:\gzb_file_to_github\P2_Pdf_To_Markdown\lingdaoren\test_output.json"
+    print(f"\n【将方案1的结果包装并写入文件】")
+    save_rule_results_to_json(rule_results, out_file)
 
     # 2. 测试方案2（LLM提取）
     # 注意：运行此部分需要您的 Ollama 服务正在运行且可以访问
