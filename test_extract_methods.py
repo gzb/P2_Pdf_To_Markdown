@@ -9,10 +9,9 @@ def extract_quotes_by_rule(text):
     """
     使用正则表达式提取文本中“习近平”讲过的语句。
     匹配逻辑：寻找包含“习近平”的句子，并提取其中双引号内的内容。
+    返回规范的 JSON 数据格式。
     """
-    results = []
-    # 匹配引导语的正则：寻找“习近平”以及常见的发言动词
-    # 寻找诸如“习近平指出”、“习近平强调”等后面的双引号内容
+    quotes_list = []
     
     # 简单切分句子，按句号切分
     sentences = re.split(r'([。！？])', text)
@@ -33,12 +32,38 @@ def extract_quotes_by_rule(text):
                 if quotes:
                     # 过滤掉极短的可能不是整句的引用
                     valid_quotes = [q for q in quotes if len(q) > 2]
-                    if valid_quotes:
-                        results.append({
-                            "original_text": sentence.strip(),
-                            "extracted_quotes": valid_quotes
+                    for q in valid_quotes:
+                        # 尝试提取前文摘要作为 context (最多50字)
+                        context = sentence[:50] + "..." if len(sentence) > 50 else sentence
+                        quotes_list.append({
+                            "text": q,
+                            "type": "direct",
+                            "context": context
                         })
-    return results
+                        
+    if not quotes_list:
+        return {
+            "message": "没有发现人物言论信息",
+            "status": "empty"
+        }
+        
+    return {
+        "message": "发现人物言论信息",
+        "status": "success",
+        "data": {
+            "people": [
+                {
+                    "name": "习近平",
+                    "position": "中共中央总书记、国家主席、中央军委主席",
+                    "quotes": quotes_list
+                }
+            ],
+            "summary": {
+                "total_people": 1,
+                "total_quotes": len(quotes_list)
+            }
+        }
+    }
 
 
 # ==========================================================
@@ -62,24 +87,42 @@ def extract_quotes_by_llm(text, ollama_url="http://192.168.0.19:11435/api/chat",
     4. 间接引用：如果是作者的间接叙述而非习近平本人的原话引用，请不要提取。
     5. 完整性：如果一句话中有多个由逗号分隔的独立引号引用（如：“句话A”，“句话B”），请将它们作为独立的元素提取或合并为一个连贯的句子。
 
-    # 输出格式（严格的 JSON 格式，不要输出其他多余的解释文字）
+    # 输出格式规范（严格遵守以下 JSON 格式，不要输出其他多余的解释文字）
+    
+    1. 当内容中包含领导人言论时：
+    ```json
     {
+      "message": "发现人物言论信息",
       "status": "success",
       "data": {
-        "person": "习近平",
-        "quotes": [
+        "people": [
           {
-            "content": "提取出的第一句讲话内容原文",
-            "context": "该讲话所在的简短背景或前缀（如：在谈到中央全面依法治国委员会的职责定位时强调）"
+            "name": "识别到的人名",
+            "position": "自动推断的职位/身份（如可推断）",
+            "quotes": [
+              {
+                "text": "直接引用的原文",
+                "type": "direct/indirect",
+                "context": "前后文摘要（50字内）"
+              }
+            ]
           }
-        ]
+        ],
+        "summary": {
+          "total_people": 总数,
+          "total_quotes": 总引用数
+        }
       }
     }
-    如果未发现符合条件的讲话，请返回：
+    ```
+
+    2. 当内容中不包含领导人言论时：
+    ```json
     {
-      "status": "empty",
-      "message": "未提取到相关言论"
+      "message": "没有发现人物言论信息",
+      "status": "empty"
     }
+    ```
     '''
 
     payload = {
