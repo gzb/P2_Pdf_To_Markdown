@@ -303,6 +303,36 @@ def filter_with_llm(
     return results
 
 
+def _remove_substring_quotes(quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    去重逻辑进阶版：如果一个 quote 的 text 是另一个 quote text 的子串，
+    则保留较长的那个（通常是包含完整的原话）。
+    """
+    if not quotes:
+        return quotes
+        
+    # 先按长度从长到短排序，方便判断子串
+    quotes_sorted = sorted(quotes, key=lambda x: len(x["text"]), reverse=True)
+    kept = []
+    
+    for q in quotes_sorted:
+        q_clean = re.sub(r'[^\w]', '', q["text"])
+        # 检查当前较短的句子是否被已经保留的较长句子包含
+        is_sub = False
+        for k in kept:
+            k_clean = re.sub(r'[^\w]', '', k["text"])
+            if q_clean in k_clean:
+                is_sub = True
+                break
+        if not is_sub:
+            kept.append(q)
+            
+    # 恢复在原文中出现的前后顺序（或者也可以保留其他顺序）
+    # 这里简单保持原列表中元素的相对顺序
+    original_order_kept = [q for q in quotes if q in kept]
+    return original_order_kept
+
+
 def extract_xjp_quotes(
     text: str,
     use_llm: bool = True,
@@ -328,6 +358,9 @@ def extract_xjp_quotes(
             api_provider=api_provider, api_key=api_key
         )
         quotes = [{"text": k["text"], "type": k["type"], "context": k["context"]} for k in kept]
+
+    # 去除包含关系的子串
+    quotes = _remove_substring_quotes(quotes)
 
     if quotes:
         return {
