@@ -275,6 +275,8 @@ def filter_with_llm(
     items = out.get("items") or []
     keep_map = {it.get("id"): it for it in items if isinstance(it, dict) and it.get("id")}
     results = []
+    seen_texts = set()
+    
     for c in candidates:
         it = keep_map.get(c.id)
         if not it:
@@ -285,6 +287,13 @@ def filter_with_llm(
         qtext = _strip_trailing_refs(str(it.get("text") or ""))
         if not qtext:
             continue
+            
+        # 简单去重：去掉标点后如果已存在，则不再加入
+        clean_qtext = re.sub(r'[^\w\s]', '', qtext)
+        if clean_qtext in seen_texts:
+            continue
+        seen_texts.add(clean_qtext)
+            
         results.append({
             "id": c.id,
             "text": qtext,
@@ -305,7 +314,13 @@ def extract_xjp_quotes(
     candidates = extract_candidates(text)
 
     if not use_llm:
-        quotes = [{"text": c.text, "type": "direct", "context": c.context} for c in candidates]
+        quotes = []
+        seen = set()
+        for c in candidates:
+            clean_text = re.sub(r'[^\w\s]', '', c.text)
+            if clean_text not in seen:
+                seen.add(clean_text)
+                quotes.append({"text": c.text, "type": "direct", "context": c.context})
     else:
         kept = filter_with_llm(
             text, candidates,
