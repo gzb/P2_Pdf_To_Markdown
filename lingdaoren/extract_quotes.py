@@ -180,7 +180,33 @@ def _ollama_chat(url: str, model: str, messages: List[Dict[str, str]], temperatu
     return (obj.get("message") or {}).get("content") or ""
 
 
-def filter_with_ollama(text: str, candidates: List[Candidate], model: str = "qwen2.5:32b", ollama_base_url: str = "http://localhost:11434") -> List[Dict[str, Any]]:
+def _bailian_chat(api_key: str, model: str, messages: List[Dict[str, str]], temperature: float = 0.0) -> str:
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    req = urllib.request.Request(url, data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        raw = resp.read().decode("utf-8")
+    obj = json.loads(raw)
+    return obj["choices"][0]["message"]["content"]
+
+
+def filter_with_llm(
+    text: str,
+    candidates: List[Candidate],
+    model: str = "qwen2.5:32b",
+    base_url: str = "http://localhost:11434",
+    api_provider: str = "ollama",
+    api_key: Optional[str] = None
+) -> List[Dict[str, Any]]:
     cand_json = [
         {
             "id": c.id,
@@ -221,7 +247,15 @@ def filter_with_ollama(text: str, candidates: List[Candidate], model: str = "qwe
         "}\n"
     )
 
-    content = _ollama_chat(ollama_base_url, model, [{"role": "system", "content": system}, {"role": "user", "content": user}], temperature=0.0)
+    def call_chat(messages, temp):
+        if api_provider == "bailian":
+            if not api_key:
+                raise ValueError("api_key is required for Bailian API")
+            return _bailian_chat(api_key, model, messages, temp)
+        else:
+            return _ollama_chat(base_url, model, messages, temp)
+
+    content = call_chat([{"role": "system", "content": system}, {"role": "user", "content": user}], 0.0)
 
     try:
         out = _extract_json_object(content)
@@ -230,7 +264,7 @@ def filter_with_ollama(text: str, candidates: List[Candidate], model: str = "qwe
         fix_user = (
             "你上一次输出不是严格JSON。请只输出严格JSON对象，字段仅允许 items[id,keep,type,text,evidence]。不要输出任何解释。"
         )
-        content2 = _ollama_chat(ollama_base_url, model, [{"role": "system", "content": system}, {"role": "user", "content": user}, {"role": "assistant", "content": content}, {"role": "user", "content": fix_user}], temperature=0.0)
+        content2 = call_chat([{"role": "system", "content": system}, {"role": "user", "content": user}, {"role": "assistant", "content": content}, {"role": "user", "content": fix_user}], 0.0)
         out = _extract_json_object(content2)
 
     items = out.get("items") or []
@@ -255,13 +289,24 @@ def filter_with_ollama(text: str, candidates: List[Candidate], model: str = "qwe
     return results
 
 
-def extract_xjp_quotes(text: str, use_llm: bool = True, model: str = "qwen2.5:32b", ollama_base_url: str = "http://localhost:11434") -> Dict[str, Any]:
+def extract_xjp_quotes(
+    text: str,
+    use_llm: bool = True,
+    model: str = "qwen2.5:32b",
+    base_url: str = "http://localhost:11434",
+    api_provider: str = "ollama",
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
     candidates = extract_candidates(text)
 
     if not use_llm:
         quotes = [{"text": c.text, "type": "direct", "context": c.context} for c in candidates]
     else:
-        kept = filter_with_ollama(text, candidates, model=model, ollama_base_url=ollama_base_url)
+        kept = filter_with_llm(
+            text, candidates,
+            model=model, base_url=base_url,
+            api_provider=api_provider, api_key=api_key
+        )
         quotes = [{"text": k["text"], "type": k["type"], "context": k["context"]} for k in kept]
 
     if quotes:
@@ -289,4 +334,14 @@ def extract_xjp_quotes(text: str, use_llm: bool = True, model: str = "qwen2.5:32
 if __name__ == "__main__":
     # 测试样例
     sample = "习近平总书记强调：要坚持人民至上、生命至上。文章作者认为这很重要。"
-    print(json.dumps(extract_xjp_quotes(sample, use_llm=True, model="qwen2.5:32b"), ensure_ascii=False, indent=2))
+    print(json.dumps(
+        extract_xjp_quotes(
+            sample,
+            use_llm=True,
+            model="qwen-plus",
+            api_provider="bailian",
+            api_key="sk-d547b1e274774d33a530c124b0f49f92"
+        ),
+        ensure_ascii=False,
+        indent=2
+    ))
