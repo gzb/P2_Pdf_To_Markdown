@@ -65,10 +65,15 @@ def extract_candidates(text: str) -> List[Candidate]:
     # 1. 带引号的明确引语
     for i, (qs, qe) in enumerate(quoted_spans):
         left_ctx = text[max(0, qs - 120):qs]
-        m_speaker = re.search(SPEAKER_PAT, left_ctx)
-        m_cue = re.search(r"(" + cue_pat + r")", left_ctx)
-        if not (m_speaker and m_cue):
+        # Find all matches and take the last one to ensure we get the closest speaker/cue
+        speakers = list(re.finditer(SPEAKER_PAT, left_ctx))
+        cues = list(re.finditer(r"(" + cue_pat + r")", left_ctx))
+        
+        if not (speakers and cues):
             continue
+            
+        m_speaker = speakers[-1]
+        m_cue = cues[-1]
 
         quote_text = _strip_trailing_refs(text[qs:qe])
         if not quote_text:
@@ -228,8 +233,8 @@ def filter_with_llm(
         "任务：判断候选片段是否为“习近平”的直接讲话原文或明显原话（可无引号），并返回严格JSON。\n"
         "判定标准（必须同时满足才keep=true）：\n"
         "1) 说话人能由原文证据指向“习近平”（含同指：习近平总书记/习近平主席）。\n"
-        "2) 片段是其原话/直接引语，或无引号但明显是他说的原话句子；若只是作者概述、政策解读、他人转述且无法证明为原话，则keep=false。\n"
-        "3) 若是别人的话、会议文件条款、记者提问、网民评论等，keep=false。\n"
+        "2) 片段是其原话/直接引语。注意：紧跟在“强调”、“指出”、“提出”等提示词后面的句子，即使没有引号，也应认定为他的原话（keep=true）。\n"
+        "3) 若是别人的话、会议文件条款、记者提问、网民评论、作者的自我论述等，keep=false。\n"
         "4) 清洗：去掉末尾①②③、[1]、（1）等引用标记；保留语义完整。\n\n"
         f"【原文】\n{text}\n\n"
         f"【候选列表(JSON)】\n{json.dumps(cand_json, ensure_ascii=False)}\n\n"
@@ -333,7 +338,7 @@ def extract_xjp_quotes(
 
 if __name__ == "__main__":
     # 测试样例
-    sample = "习近平总书记强调：要坚持人民至上、生命至上。文章作者认为这很重要。"
+    sample = "习近平总书记强调：要坚持人民至上、生命至上。文章作者认为这很重要。习近平总书记提出坚持党的领导是社会主义法治的根本要求，是全面依法治国题中应有之义。习近平总书记指出：\"中国共产党为什么能，中国特色社会主义为什么好，归根到底是马克思主义行，是中国化时代化的马克思主义行。\"①"
     print(json.dumps(
         extract_xjp_quotes(
             sample,
