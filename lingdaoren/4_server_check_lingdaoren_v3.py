@@ -547,21 +547,32 @@ def extract_quotes_by_rule(text):
 # ==========================================================
 # 辅助函数：保存规则提取结果到指定格式的 JSON 文件
 # ==========================================================
-def save_rule_results_to_json(rule_results, out_file_json):
+def save_rule_results_to_json(rule_results, out_file_json, model="reg", role="assistant"):
     """
     将提取的 rule_results 按指定的 JSON 结构包装并写入文件。
     模拟了类似 LLM API 返回的数据结构。
     """
-    # 将字典对象转换为 JSON 字符串，作为 content 的值
-    content_str = json.dumps(rule_results, ensure_ascii=False)
+    if isinstance(rule_results, str):
+        try:
+            rule_results = json.loads(rule_results)
+        except json.JSONDecodeError:
+            pass
+
+    if isinstance(rule_results, (dict, list)):
+        json_str = json.dumps(rule_results, ensure_ascii=False, indent=4)
+    else:
+        json_str = str(rule_results)
+        
+    # 添加 markdown json 代码块包装
+    content_str = f"```json\n{json_str}\n```"
     
     current_time = datetime.now().isoformat() + "Z"
     
     wrapper_data = {
-        "model": "reg",
+        "model": model,
         "created_at": current_time,
         "message": {
-            "role": "reg",
+            "role": role,
             "content": content_str
         },
         "done": True,
@@ -718,21 +729,17 @@ def Check_Text_LingDaoRen_LLM_V3(records, created_folder, str_prompt, str_llm_mo
     max_attempts = 3
     attempt = 0
     while attempt < max_attempts:
-        llm_return_json=json.dumps(
-                extract_xjp_quotes(
-                    records.get('content'),
-                    use_llm=True,
-                    model=mode_name,
-                    base_url= ollama_url,
-                    api_provider="",
-                    api_key=""
-                ),
-                ensure_ascii=False,
-                indent=2
-            )
+        extracted_data = extract_xjp_quotes(
+            records.get('content'),
+            use_llm=True,
+            model=mode_name,
+            base_url= ollama_url,
+            api_provider="",
+            api_key=""
+        )
         # 2. 结果写入文件
         print(f"\n【将方案1的结果包装并写入文件】")
-        save_rule_results_to_json(llm_return_json, output_file_json)
+        save_rule_results_to_json(extracted_data, output_file_json, model=str_llm_mode_name)
         
         
         rec_content = records.get('content')
