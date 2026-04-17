@@ -7,3 +7,7 @@
 /__pycache__
 lingdaoren/test_output.json
 /lingdaoren/__pycache__
+ocr_to_image/1_image_ocr_to_json.json
+ocr_to_image/2_json_to_text.txt
+ocr_to_image/ocr_result_image.jpg
+ocr_to_image/ocr_result_image_v2.jpg
