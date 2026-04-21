@@ -28,6 +28,12 @@ def generate_html_report(json_folder, output_html):
 
     for filename in files:
         filepath = os.path.join(json_folder, filename)
+        
+        # 检查文件是否为空
+        if os.path.getsize(filepath) == 0:
+            print(f"警告: 文件 {filename} 是空文件，已跳过。")
+            continue
+            
         with open(filepath, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
@@ -195,13 +201,13 @@ def generate_html_report(json_folder, output_html):
         </div>
     """
 
-    for item in report_data:
+    for index, item in enumerate(report_data, start=1):
         right_text = item['right_sentences'] if item['right_sentences'] else '<span class="empty-text">无建议修改内容</span>'
         
         html_content += f"""
         <div class="card">
             <div class="card-header">
-                <span><span class="id-badge">ID: {item['id']}</span></span>
+                <span><span class="id-badge">No. {index} | ID: {item['id']}</span></span>
                 <span style="font-size: 12px; color: #999;">来源: {item['filename']}</span>
             </div>
             <div class="card-body">
@@ -229,9 +235,9 @@ def generate_html_report(json_folder, output_html):
     print(f"统计信息: 发现 {total_content_count} 个检查项，总计 {total_content_chars} 字。")
 
 if __name__ == "__main__":
-    json_folder = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\2_Check_H"
+    json_folder = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\2_Check_H_v2"
     
     # 将生成的 HTML 放在同一层级的目录下
-    output_html = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\check_report.html"
+    output_html = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\check_report_v2.html"
     
     generate_html_report(json_folder, output_html)
