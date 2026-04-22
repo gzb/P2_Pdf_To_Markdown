@@ -37,7 +37,7 @@ def count_total_words(json_file_path, output_file_path):
 
 if __name__ == "__main__":
     # 指定要读取的 JSON 文件路径
-    input_json = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\1_Json\processed_data_ok.json"
+    input_json = r"C:\1_web_book_check_v2\1_Server\fastapi-auth-app\check_book\3e66efbd75d5515ce9ff6939e1f03d5d\1_Json\processed_data_0420.json"
     
     # 设定结果输出文件（放在同一目录下，名为 total_word_count.txt）
     output_dir = os.path.dirname(input_json)
