@@ -2168,6 +2168,8 @@ def merged_format_process_file(input_path, output_path):
         if "content" in item and isinstance(item["content"], str):
             for char in garbled_chars:
                 item["content"] = item["content"].replace(char, "")
+            # 替换 "##" 和 "#" 为 "\n"
+            item["content"] = item["content"].replace("##", "\n").replace("#", "\n")
                 
         if "texts" in item and isinstance(item["texts"], list):
             new_texts = []
@@ -2175,6 +2177,8 @@ def merged_format_process_file(input_path, output_path):
                 if isinstance(text_item, str):
                     for char in garbled_chars:
                         text_item = text_item.replace(char, "")
+                    # 对 texts 里面的元素也同样替换 "##" 和 "#" 为 "\n"
+                    #text_item = text_item.replace("##", "\n").replace("#", "\n")
                 new_texts.append(text_item)
             item["texts"] = new_texts
 
