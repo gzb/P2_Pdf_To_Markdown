@@ -2159,6 +2159,24 @@ def merged_format_process_file(input_path, output_path):
                     else:
                         flattened_num.append(sub)
                 item["number"] = flattened_num
+                
+        # 处理 content 和 texts 中的乱码
+        #garbled_str = "\u0003\u0003\u0003\u0003Җ(   5- ˄&,3˅ᮠᦞ\u0003\u0003\u0003\u0003ҹAṸᇎ+᡻޼\u0003\u0012\u0003Ӫ\"L(/5\u0011Ӝ\u0003\u0003Ӫ\"#L(/\u000f\u0003\u0015\u0013\u0015\u0019\u0011\u0003\u0017\u0011\u0003\u0010\u0010\u0003Ӫ\"#LṸᇎ+᡻޼3\u0011\u0003\u0010\u0010\u0003,6%1\u0003\u001a\u001b\u0010\u001a\u0010\u0018\u0014\u0013\u0010\u0017\u001a\u001a\u0018\u0010\u0003\u0003\u0003\u0003\u0003ĉ\u0011\u0003'\u0015\u0015\u0011\u0018\u0014\u0011\u0018\u0003\u0003\u0003\u0003\u0003ѝᇦ(ᵜO&,3ᮠᦞṨᆇ1\u0015\u0013\u0015\u0018<5\u001a\u0014\u0013\u001a"
+        garbled_str = "\u0003Җ&˅ᮠᦞҹAṸᇎ+᡻޼\u0012\u0011\u0003\u000f\u0015\u0013\u0015\u0019\u0011\u0003\u0017\u0011\u0003\u0010\u0010\u0003Ṹᇎ+᡻޼3\u0011\u0003\u0010\u0010\u0003\u0003\u001a\u001b\u0010\u001a\u0010\u0018\u0014\u0013\u0010\u0017\u001a\u001a\u0018\u0010\u0003\u0003\u0003\u0003\u0003ĉ\u0011\u0003'\u0015\u0015\u0011\u0018\u0014\u0011\u0018\u0003\u0003\u0003\u0003\u0003ѝᇦ(ᵜ&ᮠᦞṨᆇ\u0015\u0013\u0015\u0018\u001a\u0014\u0013\u001a"
+        garbled_chars = set(garbled_str)
+        
+        if "content" in item and isinstance(item["content"], str):
+            for char in garbled_chars:
+                item["content"] = item["content"].replace(char, "")
+                
+        if "texts" in item and isinstance(item["texts"], list):
+            new_texts = []
+            for text_item in item["texts"]:
+                if isinstance(text_item, str):
+                    for char in garbled_chars:
+                        text_item = text_item.replace(char, "")
+                new_texts.append(text_item)
+            item["texts"] = new_texts
 
     print(f"Writing to {output_path}")
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -2281,4 +2299,4 @@ if __name__ == "__main__":
     input_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\processed_merged_nodes_three-py-to-ds-curpage-merged.json"
     output_file = r"C:\gzb_file_to_github\P2_Pdf_To_Markdown\test_json\processed_merged_nodes_three-py-to-ds-curpage-merged_format.json"
     merged_format_process_file(input_file, output_file)
-  
+ 
